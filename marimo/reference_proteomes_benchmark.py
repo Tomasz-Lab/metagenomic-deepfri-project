@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.1"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium")
 
 
@@ -10,27 +10,51 @@ def _():
     import numpy as np
     import matplotlib.pyplot as plt
     import matplotlib.style
-    from upsetplot import from_contents, UpSet, plot
+    from upsetplot import from_contents, plot
     import importlib
-    import plotly.express as px
-    import plotly.io as pio
     import pandas as pd
     from goatools.obo_parser import GODag
     from pathlib import Path
-
+    from scipy.stats import mannwhitneyu
 
     # save and display plots in whitemode
     matplotlib.style.use("default")
-    pio.templates.default = "plotly"
-    return GODag, Path, from_contents, importlib, mo, pd, plot, plt
+    return (
+        GODag,
+        Path,
+        from_contents,
+        importlib,
+        mannwhitneyu,
+        mo,
+        np,
+        pd,
+        plot,
+        plt,
+    )
 
 
 @app.cell
 def _(importlib):
-    import wang_similarity_helpers as wsh
+    import helpers.wang_similarity_helpers as wsh
 
     importlib.reload(wsh)
     return (wsh,)
+
+
+@app.cell
+def _(importlib):
+    import helpers.goterm_propagator as prop
+
+    importlib.reload(prop)
+    return (prop,)
+
+
+@app.cell
+def _(importlib):
+    import helpers.goterm_plots as gplot
+
+    importlib.reload(gplot)
+    return (gplot,)
 
 
 @app.cell
@@ -44,14 +68,21 @@ def _():
 
 @app.cell
 def _(GODag, pd):
-    # information content from SwissProt
-    ic_df = pd.read_csv(
-        "/home/FilipS/2024/weave_warmup/generated_data/IC_swissprot.csv"
-    )
+    # information content from CAFA 5
+    # (https://www.kaggle.com/competitions/cafa-5-protein-function-prediction/data) IA.txt
+    # ic_df = pd.read_csv("data/external/IA.txt", sep="\t", names=["go_term", "IC"])
+
+    ic_df = pd.read_csv("data/external/IC_swissprot.csv")
 
     # GO DAF
-    go_dag = GODag("/home/FilipS/2024/weave_warmup/generated_data/go-basic.obo")
+    go_dag = GODag("data/external/go-basic-latest.obo")
     return go_dag, ic_df
+
+
+@app.cell
+def _(ic_df):
+    print(ic_df)
+    return
 
 
 @app.cell
@@ -79,13 +110,13 @@ def _(mo):
 @app.cell
 def _(Path):
     BASE = Path(
-        "/home/FilipS/software/mdeepfri_source/Metagenomic-DeepFRI/results/reference_proteomes"
+        "/home/FilipS/2025/metagenomic_deepfri/data/source/reference_proteomes/mdf_results"
     )
 
     identity_bins = {
         "50": "identity_bin_0.00-0.50",
         "90": "identity_bin_0.00-0.90",
-        "100": "identity_bin_0.00-1.00",
+        "100": "identity_bin_0.00-1.01",
     }
 
     db_files = {
@@ -263,7 +294,7 @@ def _(from_contents, go_terms_100, go_terms_50, go_terms_90, plot, plt):
 
         series = from_contents(contents)
 
-        fig = plt.figure(figsize=(12, 5))
+        fig = plt.figure(figsize=(7, 5))
         plot(
             series,
             subset_size="count",
@@ -273,7 +304,7 @@ def _(from_contents, go_terms_100, go_terms_50, go_terms_90, plot, plt):
             sort_categories_by="input",
             sort_by="cardinality",
         )
-        plt.suptitle(f"Annotation overlap for {aspect_label}")
+        # plt.suptitle(f"Annotation overlap for {aspect_label}")
         plt.show()
 
 
@@ -431,6 +462,145 @@ def _(go_terms_100, go_terms_50, go_terms_90, plt):
 
     fig.suptitle(
         "Annotation number per protein by identity cutoff and GO aspect", y=1.03
+    )
+    plt.tight_layout()
+    plt.show()
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Median number of predictions vs max IC for > 0.2 scores
+    """)
+    return
+
+
+@app.cell
+def _(go_terms_100, mannwhitneyu, np, plt):
+    _score_cutoff = 0.2
+    _bin_width = 3
+    _min_n_for_test = 20
+    _eps = 0.5
+
+
+    def _p_to_stars(_p: float) -> str:
+        if np.isnan(_p):
+            return "n/a"
+        if _p < 1e-4:
+            return "****"
+        if _p < 1e-3:
+            return "***"
+        if _p < 1e-2:
+            return "**"
+        if _p < 5e-2:
+            return "*"
+        return "ns"
+
+
+    def _add_sig_bracket(_ax, _i, _j, _y, _h, _text):
+        _ax.plot([_i, _i, _j, _j], [_y, _y + _h, _y + _h, _y], linewidth=1)
+        _ax.text(
+            (_i + _j) / 2, _y + _h, _text, ha="center", va="bottom", fontsize=9
+        )
+
+
+    def _bin_label(_b: int) -> str:
+        return f"{int(_b)}–{int(_b + _bin_width)}"
+
+
+    # filter terms, summarize per protein
+    _df = go_terms_100.loc[go_terms_100["Score"] >= _score_cutoff].copy()
+    _summ = (
+        _df.groupby(["Protein", "aspect"])
+        .agg(n_pred=("go_term", "nunique"), max_ic=("IC", "max"))
+        .reset_index()
+    )
+    _summ["ic_bin"] = (np.floor(_summ["max_ic"] / _bin_width) * _bin_width).astype(
+        "Int64"
+    )
+
+    _aspects = [("bp", "BP"), ("mf", "MF"), ("cc", "CC")]
+    _fig, _axes = plt.subplots(1, 3, figsize=(10, 5), sharey=True)
+    _global_y_tops = []
+
+    for _idx, (_ax, (_asp_code, _asp_title)) in enumerate(zip(_axes, _aspects)):
+        _d = _summ.loc[
+            _summ["aspect"].astype(str).str.lower() == _asp_code,
+            ["n_pred", "ic_bin"],
+        ].dropna()
+
+        _bins = np.sort(_d["ic_bin"].unique())
+        _data = [
+            _d.loc[_d["ic_bin"] == _b, "n_pred"].astype(float).to_numpy()
+            for _b in _bins
+        ]
+        _ns = [len(_arr) for _arr in _data]
+        _tick_labels = [
+            f"{_bin_label(int(_b))}\n" + f"n={_n}" for _b, _n in zip(_bins, _ns)
+        ]
+
+        _data_plot = [np.where(_arr <= 0, _eps, _arr) for _arr in _data]
+        _bp = _ax.boxplot(
+            _data_plot, tick_labels=_tick_labels, sym=".", widths=0.5
+        )
+
+        _ax.set_title(_asp_title)
+        _ax.set_yscale("log")
+        if _asp_code == "bp":
+            _ax.set_ylabel("n predictions per protein")
+        if _idx == 1:  # middle panel
+            _ax.set_xlabel(f"Max IC bin")
+        else:
+            _ax.set_xlabel("")
+
+        _all_y = np.concatenate(_data_plot)
+        _ymin = max(_eps * 0.8, float(np.nanmin(_all_y)))
+        _ymax = float(np.nanmax(_all_y))
+        _ax.set_ylim(_ymin, _ymax * 2.5)
+
+        for _i, _median_line in enumerate(_bp["medians"], start=1):
+            _median_val = float(np.exp(np.mean(np.log(_median_line.get_ydata()))))
+            _ax.text(
+                _i,
+                _median_val,
+                f"{_median_val:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+
+        _pairs = [(i, i + 1) for i in range(1, len(_data_plot))]
+        _panel_max = float(np.nanmax(_all_y))
+        _y0 = _panel_max * 1.05
+        _step = 1.25
+        _h_factor = 1.10
+
+        for _k, (_i, _j) in enumerate(_pairs):
+            _a, _b = _data[_i - 1], _data[_j - 1]
+            if (len(_a) < _min_n_for_test) or (len(_b) < _min_n_for_test):
+                _stars = "n/a"
+            else:
+                _stars = _p_to_stars(
+                    mannwhitneyu(_a, _b, alternative="two-sided").pvalue
+                )
+
+            _y = _y0 * (_step**_k)
+            _add_sig_bracket(_ax, _i, _j, _y, _y * (_h_factor - 1), _stars)
+
+        _required_top = _y0 * (_step ** max(1, len(_pairs))) * 1.3
+        _global_y_tops.append(_required_top)
+        _ax.tick_params(axis="x", labelsize=9)
+
+    _global_top = max(_global_y_tops)
+
+    for _ax in _axes:
+        _ymin, _ = _ax.get_ylim()
+        _ax.set_ylim(_ymin, _global_top)
+
+    _fig.suptitle(
+        f"Predictions per protein vs max IC | score ≥ {_score_cutoff}",
+        y=1.01,
     )
     plt.tight_layout()
     plt.show()
@@ -649,7 +819,7 @@ def _(mo):
 def _(go_terms_100, go_terms_50, go_terms_90, ic_df, pd):
     # sequence only deepFRI
     dFseq = pd.read_csv(
-        "/home/FilipS/2025/metagenomic_deepfri/reference_proteomes/sequence_only_deepfri/merged_predictions.csv"
+        "data/source/reference_proteomes/sequence_only_deepfri/merged_predictions.csv"
     )
     dFseq["Aspect"] = dFseq["Aspect"].str.lower()
     dFseq = pd.merge(
@@ -663,7 +833,7 @@ def _(go_terms_100, go_terms_50, go_terms_90, ic_df, pd):
 
     # true positive structure deepFRI
     dFstruct = pd.read_csv(
-        "/home/FilipS/2025/metagenomic_deepfri/reference_proteomes/true_structure_deepfri/merged_predictions.csv"
+        "data/source/reference_proteomes/true_structure_deepfri/merged_predictions.csv"
     )
     dFstruct["Aspect"] = dFstruct["Aspect"].str.lower()
     dFstruct = pd.merge(
@@ -689,6 +859,138 @@ def _(go_terms_100, go_terms_50, go_terms_90, ic_df, pd):
         columns={"Annotation": "Name", "go_term": "GO_term/EC", "aspect": "Aspect"}
     )[["Protein", "GO_term/EC", "Score", "Name", "Aspect", "IC"]]
     return dFseq, dFstruct, mdF100, mdF50, mdF90
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## go-term propagation
+    """)
+    return
+
+
+@app.cell
+def _(dFstruct, go_terms_100, ic_df, prop):
+    pyopal_100_propped = prop.propagate_go_annotations(
+        go_terms_100,
+        protein_col="Protein",
+        term_col="go_term",
+        score_col="Score",
+        obo_path="data/external/go-basic-latest.obo",
+        ic_df=ic_df,
+        relations=("is_a"),
+        exclude_roots=True,
+        obsolete_mode="drop",  # or "map"
+        obsolete_prefer="replaced_by",
+        score_min=0.1,  # drop low-score annotations first
+        round_decimals=3,  # round Score/IC/percent
+    )
+
+    dFstruct_propped = prop.propagate_go_annotations(
+        dFstruct,
+        protein_col="Protein",
+        term_col="GO_term/EC",
+        score_col="Score",
+        obo_path="data/external/go-basic-latest.obo",
+        ic_df=ic_df,
+        relations=("is_a"),
+        exclude_roots=True,
+        obsolete_mode="drop",  # or "map"
+        obsolete_prefer="replaced_by",
+        score_min=0.1,  # drop low-score annotations first
+        round_decimals=3,  # round Score/IC/percent
+    )
+    return dFstruct_propped, pyopal_100_propped
+
+
+@app.cell
+def _(dFstruct_propped):
+    dFstruct_propped[0].query(
+        "Protein == 'AF-A0A0H4IRJ4-F1-model_v6' & Aspect =='cc'"
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Concordance analysis
+    """)
+    return
+
+
+@app.cell
+def _(dFstruct_propped):
+    dFstruct_propped
+    return
+
+
+@app.cell
+def _(dFstruct_propped, gplot, plt, pyopal_100_propped):
+    per_prot, per_bin = gplot.concordance_by_ic(
+        pyopal_100_propped[0],
+        dFstruct_propped[0],
+        protein_col="Protein",
+        term_col="GO_term",
+        ic_col="IC",
+        metric="jaccard",  # 0..1 overlap
+        score_col="Score",
+        score_min=0.3,  # or e.g. 0.2
+        ic_min=1.0,
+        ic_max=14.0,  # bins 1..13
+        bin_width=1.0,
+        drop_propagated=None,  # True for originals, False for propagated only and None for both
+        require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
+    )
+
+    _fig = gplot.plot_concordance_boxplot(
+        per_prot,
+        per_bin,
+        title="Method concordance by IC bin",
+    )
+    plt.show()
+    return per_bin, per_prot
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Concordance violin plot
+    """)
+    return
+
+
+@app.cell
+def _(gplot, per_bin, per_prot, plt):
+    _fig = gplot.plot_concordance_violin(
+        per_prot,
+        per_bin,
+        title="Method concordance by IC bin",
+    )
+    plt.show()
+    return
+
+
+@app.cell
+def _(per_prot):
+    per_prot
+    return
+
+
+@app.cell
+def _(pyopal_100_propped):
+    pyopal_100_propped[0].query(
+        "Protein == 'AF-P0AD86-F1-model_v6' & IC > 8.99 & IC < 10"
+    )
+    return
+
+
+@app.cell
+def _(dFstruct_propped):
+    dFstruct_propped[0].query(
+        "Protein == 'AF-P0AD86-F1-model_v6' & IC > 8.99 & IC < 10"
+    )
+    return
 
 
 @app.cell(hide_code=True)
@@ -748,14 +1050,116 @@ def _(mo):
 
 
 @app.cell
+def _(mdF100):
+    mdF100.query("Score >= 0.2")
+    return
+
+
+@app.cell
 def _(dFstruct, mdF100, upset_by_aspect):
     # compare mdF only filtered by self-hits with perfect structures, only on MF
     for _aspect in ["mf"]:
         upset_by_aspect(
             aspect_label=_aspect,
-            dFstruct=dFstruct,
-            mdF100=mdF100,
+            deepFRI_structure=dFstruct.query("Score >= 0.3"),
+            metagenomic_deepFRI=mdF100.query("Score >= 0.3"),
         )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Venn-diagram mdF vs dF
+    """)
+    return
+
+
+@app.cell
+def _(plt):
+    from matplotlib_venn import venn2
+
+
+    def venn_with_percentages(
+        set_a: set,
+        set_b: set,
+        label_a: str = "A",
+        label_b: str = "B",
+        colors: tuple[str, str] = ("#33b1ff", "#08bdba"),
+        alpha: float = 0.6,
+        offset: float = 0.15,
+        overlap_color: str = "#e5f6ff",
+        overlap_alpha: float = 0.85,
+    ):
+        a_only = len(set_a - set_b)
+        b_only = len(set_b - set_a)
+        both = len(set_a & set_b)
+        total = a_only + b_only + both
+
+        plt.figure(figsize=(6, 6))
+        v = venn2(
+            subsets=(a_only, b_only, both),
+            set_labels=(label_a, label_b),
+            set_colors=colors,
+            alpha=alpha,
+        )
+
+        # format labels as count + percentage
+        def _fmt(n: int) -> str:
+            return f"{n}\n({100 * n / total:.1f}%)" if total > 0 else "0\n(0.0%)"
+
+        for region, value in zip(("10", "01", "11"), (a_only, b_only, both)):
+            lbl = v.get_label_by_id(region)
+            if lbl:
+                lbl.set_text(_fmt(value))
+                lbl.set_fontsize(16)
+
+        # push non-overlap labels outward
+        for region, direction in [("10", -1), ("01", 1)]:
+            lbl = v.get_label_by_id(region)
+            if lbl:
+                x, y = lbl.get_position()
+                lbl.set_position((x + direction * offset, y))
+                lbl.set_ha("right" if direction < 0 else "left")
+
+        # set overlap region color explicitly
+        overlap = v.get_patch_by_id("11")
+        if overlap:
+            overlap.set_color(overlap_color)
+            overlap.set_alpha(overlap_alpha)
+
+        # outline styling
+        for patch in v.patches:
+            if patch:
+                patch.set_edgecolor("black")
+                patch.set_linewidth(1.2)
+
+        for label in v.set_labels:
+            if label:
+                label.set_fontsize(16)
+                label.set_fontweight("bold")
+
+        plt.title("Annotation overlap for MF", fontsize=16)
+        plt.tight_layout()
+        plt.show()
+    return (venn_with_percentages,)
+
+
+@app.cell
+def _(dFstruct, mdF100, venn_with_percentages):
+    _mdf_hq = mdF100.query("Score >= 0.3 & Aspect == 'mf'")
+    _dfs_hq = dFstruct.query("Score >= 0.3 & Aspect == 'mf'")
+
+    set_a = set(zip(_mdf_hq["Protein"], _mdf_hq["GO_term/EC"]))
+    set_b = set(zip(_dfs_hq["Protein"], _dfs_hq["GO_term/EC"]))
+
+    venn_with_percentages(
+        set_a,
+        set_b,
+        label_a="meta-deepFRI       ",
+        label_b="       struct-deepFRI",
+        offset=0.02,
+    )
     return
 
 
@@ -786,10 +1190,16 @@ def _(dFseq, dFstruct, mdF100, mdF50, upset_by_aspect):
     return
 
 
+@app.cell
+def _(mdF100):
+    print(mdF100)
+    return
+
+
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Refinment or noise?
+    ## Refinement or noise?
     """)
     return
 
@@ -875,14 +1285,6 @@ def _(mo):
 
 @app.cell
 def _(dFseq, dFstruct, mdF100, mdF90, plt):
-    counts_dFseq = dFseq.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
-    counts_dFstruct = dFstruct.groupby(["Protein", "Aspect"])[
-        "GO_term/EC"
-    ].nunique()
-    counts_mdF90 = mdF90.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
-    counts_mdF100 = mdF100.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
-
-
     def _get_aspect_counts(counts_series, aspect):
         aspect_lower = str(aspect).lower()
         aspect_index = (
@@ -950,7 +1352,7 @@ def _(dFseq, dFstruct, mdF100, mdF90, plt):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Median IC per protein
+    ## Max IC per protein
     """)
     return
 
@@ -1049,73 +1451,17 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, dFstruct, mdF100, mdF90, plt):
-    score_dFseq = dFseq.groupby(["Protein", "Aspect"])["Score"].median()
-    score_dFstruct = dFstruct.groupby(["Protein", "Aspect"])["Score"].median()
-    score_mdF90 = mdF90.groupby(["Protein", "Aspect"])["Score"].median()
-    score_mdF100 = mdF100.groupby(["Protein", "Aspect"])["Score"].median()
+def _(mo):
+    mo.md(r"""
+    Statistics are a bit weird here. We have two options really:
+    1. **Mann-Whitney U test**, that work on unpaired data, checking if randomly picked samples differ aka the H0 being both sets are generated based on the same distribution.
+    2. **Wilcoxon signed-rank test**, that work on paired data, checking if the same samples differ between methods.
+    """)
+    return
 
 
-    def _per_protein_median_by_aspect(s, aspect):
-        """
-        s: Series with MultiIndex (Protein, Aspect) and values = per-protein median Score
-        aspect: "bp", "mf", or "cc"
-        """
-        aspect_norm = str(aspect).lower()
-        # assume second level of index is Aspect
-        aspects = s.index.get_level_values("Aspect").astype(str).str.lower()
-        mask = aspects == aspect_norm
-        return s[mask].dropna().values
-
-
-    _sources = [
-        ("seq", score_dFseq),
-        ("struct", score_dFstruct),
-        ("90", score_mdF90),
-        ("100", score_mdF100),
-    ]
-
-    _aspects = [
-        ("bp", "BP"),
-        ("mf", "MF"),
-        ("cc", "CC"),
-    ]
-
-    _fig, _axes = plt.subplots(1, 3, figsize=(14, 4), sharey=False)
-
-    for _ax, (_asp_code, _asp_title) in zip(_axes, _aspects):
-        # per-protein median scores for this aspect from all sources
-        _data = [_per_protein_median_by_aspect(s, _asp_code) for _, s in _sources]
-        _labels = [label for label, _ in _sources]
-
-        # boxplot (capture returned artists)
-        _bp = _ax.boxplot(_data, tick_labels=_labels, sym=".")
-
-        # --- annotate medians ---
-        for _i, _median_line in enumerate(_bp["medians"], start=1):
-            _x, _y = _median_line.get_xdata(), _median_line.get_ydata()
-            _median_val = _y.mean()  # median line
-
-            _ax.text(
-                _i,
-                _median_val,
-                f"{_median_val:.2f}",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-            )
-
-        _ax.set_title(_asp_title)
-
-        if _asp_code == "bp":
-            _ax.set_ylabel("Score (per-protein median)")
-
-    _fig.suptitle(
-        "Per protein median prediction score distribution",
-        y=1.03,
-    )
-    plt.tight_layout()
-    plt.show()
+@app.cell
+def _():
     return
 
 
@@ -1174,11 +1520,6 @@ def _(dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
     )
     plt.tight_layout()
     plt.show()
-    return
-
-
-@app.cell
-def _():
     return
 
 

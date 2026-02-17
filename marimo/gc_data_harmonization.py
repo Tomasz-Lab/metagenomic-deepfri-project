@@ -72,11 +72,11 @@ def _(mo):
 @app.cell
 def _(pd):
     ### data loading ###
-
     _landscape_path = "data/source/landscape"
+
     # mmseqs2 results from mdeepfri (full afdb_v4 search)
     afdb_v4_full = pd.read_csv(
-        f"{_landscape_path}/afdb_uniprot_v4_results.tsv",
+        f"{_landscape_path}/mmseqs2_search/afdb_uniprot_v4_results.tsv",
         sep="\t",
     )
 
@@ -88,7 +88,7 @@ def _(pd):
 
     pyopal_root = f"{_landscape_path}/pyopal_alignments"
 
-    true_struct_root = f"{_landscape_path}/sample_50k/"
+    true_struct_root = f"{_landscape_path}/sample_50k_structures/"
 
     hit_struct_root = f"{_landscape_path}/structures"
     return (
@@ -109,7 +109,7 @@ def _(np):
 
     generated_contacts = [0, 1, 2, 3, 4]
 
-    all_bins = np.arange(0.2, 1.01, 0.1)
+    all_bins = np.arange(0.1, 1.01, 0.1)
     return all_bins, n_all_queries
 
 
@@ -182,42 +182,6 @@ def _(afdb_v4_full, n_all_queries, np, plt):
 
 
 @app.cell
-def _(afdb_v4_full, pd):
-    ### is top_k=200 enough to reach lower identity thresholds? ###
-    # Group by query
-    g = afdb_v4_full.groupby("query")
-
-    # Count hits per query
-    hit_counts = g.size().rename("hit_count")
-
-    # Whether each query has any fident in the 0.3–0.4 range
-    has_fident_range = g["fident"].apply(lambda x: ((x >= 0.3) & (x <= 0.4)).any())
-
-    # Combine summary per query
-    sh_summary = pd.concat(
-        [hit_counts, has_fident_range.rename("has_fident_0_3_0_4")], axis=1
-    )
-
-
-    ### 1. queries with exactly 200 hits AND no fident in 0.3–0.4 range
-    q1 = sh_summary[
-        (sh_summary.hit_count == 200) & (~sh_summary.has_fident_0_3_0_4)
-    ]
-    count_q1 = len(q1)
-
-
-    ### 2. queries with < 200 hits BUT at least one fident in 0.3–0.4 range
-    q2 = sh_summary[(sh_summary.hit_count < 200) & (sh_summary.has_fident_0_3_0_4)]
-    count_q2 = len(q2)
-
-    print(
-        f"Queries with < 200 hits BUT at least one fident in 0.3–0.4 range: {count_q2}\n",
-        f"Queries with exactly 200 hits AND no fident in 0.3–0.4 range: {count_q1}",
-    )
-    return
-
-
-@app.cell
 def _(full_query_fasta):
     ### load the fasta with original queries ###
     # lets load the full list of query sequences
@@ -240,6 +204,7 @@ def _(full_query_fasta):
 def _(mo):
     mo.md(r"""
     ## CMAP ANALYSIS
+    ### Gather all paths and results, takes like 30 minutes and loads of RAM
     """)
     return
 
@@ -257,8 +222,6 @@ def _(
     results_cmaps_dir,
     true_struct_root,
 ):
-    ### Gather all paths and results ### takes like 30 minutes and loads of RAM
-
     # 0) Prepare mmseqs2 results as a results basket
     main_results_df = afdb_v4_full.query("query != target")
 
@@ -305,7 +268,6 @@ def _(
     main_results_df["true_cmap_path"] = main_results_df["query"].map(
         ground_truth_paths
     )
-
     # 4) Add structures
     true_struct_paths = gch.discover_true_structures(true_struct_root)
     hit_struct_paths = gch.discover_hit_structures(hit_struct_root)
@@ -335,7 +297,7 @@ def _(main_results_df):
 @app.cell
 def _(lru_cache, np, pd, re, subprocess):
     ### Calculate TM-scores ###
-    USALIGN_BIN = "~/software/USalign/USalign"
+    USALIGN_BIN = "/home/FilipS/software/USalign/USalign"
 
     _tm_regex = re.compile(r"TM-score\s*=\s*([0-9.]+)")
 
@@ -410,9 +372,15 @@ def _(main_results_df, run_usalign):
 
 @app.cell
 def _(main_results_df_tm):
+    main_results_df_tm
+    return
+
+
+@app.cell
+def _(main_results_df_tm):
     ### save the file ###
     main_results_df_tm.to_csv(
-        "benchmark_results_summarized.csv", index=False, header=True
+        "data/generated/gc_benchmark_with_tm.csv", index=False, header=True
     )
     return
 

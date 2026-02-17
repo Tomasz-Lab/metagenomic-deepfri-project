@@ -30,10 +30,10 @@ def _():
 @app.cell
 def _(importlib):
     ### custom functions ###
-    import visualization_helpers as vh
+    import helpers.visualization_helpers as vh
 
     importlib.reload(vh)
-    return
+    return (vh,)
 
 
 @app.cell(hide_code=True)
@@ -47,10 +47,17 @@ def _(mo):
 @app.cell
 def _(pd):
     ### load the results prepared in gc_data_harmonization.py ###
-    full_results_df = pd.read_csv(
-        "data/generated/benchmark_results_summarized.csv"
-    )
+    full_results_df = pd.read_csv("data/generated/gc_benchmark_with_tm.csv")
+
+    # the idbin is really mmseqs2-identity based bin
+    full_results_df = full_results_df.rename(columns={"idbin": "id_bin_mmseqs2"})
     return (full_results_df,)
+
+
+@app.cell
+def _(full_results_df):
+    full_results_df
+    return
 
 
 @app.cell
@@ -184,14 +191,6 @@ def _(full_results_df, np, plt):
     return
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    # Main publication plots
-    """)
-    return
-
-
 @app.cell
 def _(mo):
     mo.md(r"""
@@ -201,27 +200,23 @@ def _(mo):
 
 
 @app.cell
-def _(full_results_df):
-    full_results_df
-    return
-
-
-@app.cell
 def _(full_results_df, plt):
     # count unique queries per id_bin
-    _counts = full_results_df.groupby("idbin")["query"].nunique().reset_index()
-    _counts = _counts.sort_values("idbin")
+    _counts = (
+        full_results_df.groupby("id_bin_mmseqs2")["query"].nunique().reset_index()
+    )
+    _counts = _counts.sort_values("id_bin_mmseqs2")
 
     # rename for clarity
-    _counts.columns = ["id_bin", "hit_count"]
+    _counts.columns = ["id_bin_mmseqs2", "hit_count"]
 
-    # convert to %, using 50k as 100%
+    # convert to %, using 50k (all queries) as 100%
     total = 50000
     _counts["percent"] = (_counts["hit_count"] / total) * 100
 
     # plot
     plt.figure(figsize=(8, 4))
-    plt.bar(_counts["id_bin"], _counts["percent"])
+    plt.bar(_counts["id_bin_mmseqs2"], _counts["percent"])
     plt.xticks(rotation=45)
     plt.xlabel("Identity bin")
     plt.ylabel("% of all queries")
@@ -231,57 +226,104 @@ def _(full_results_df, plt):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
-    ## F1 vs pyopal identity scatterplot for gc=2
+    ## F1 vs pyopal identity scatterplot for gc=2 boxplots
     """)
     return
 
 
 @app.cell
-def _(f1_long, plt):
+def _(f1_long, pd, plt):
     # --- Filter raw data for gc = 2 and base metric ---
-    gc2_subset = f1_long[
+    _gc2_subset = f1_long[
         (f1_long["gc"] == 2) & (f1_long["metric"] == "base")
     ].copy()
 
-    plt.figure(figsize=(11, 5))
-
-    # --- Raw scatter ---
-    plt.scatter(
-        gc2_subset["pyopal_identity"],
-        gc2_subset["f1"],
-        alpha=0.1,
-        s=10,
-        color="#4589ff",
-        edgecolors="none",
+    # --- Prepare 0.1-wide bins across PyOpal identity ---
+    _edges = [i / 10 for i in range(0, 11)]  # 0.0, 0.1, ..., 1.0
+    _bin_cats = pd.cut(
+        _gc2_subset["pyopal_identity"],
+        bins=_edges,
+        include_lowest=True,
+        right=True,
     )
 
-    # --- Compute median trendline (based on binning) ---
-    median_by_bin = gc2_subset.groupby("id_bin_pyopal", observed=False)[
-        "f1"
-    ].median()
+    # Collect F1 values per bin and compute positions/labels
+    _data_by_bin = []
+    _positions = []
+    _xtick_labels = []
+    _n_labels = []
+    for _interval in _bin_cats.cat.categories:
+        _mask = _bin_cats == _interval
+        _vals = _gc2_subset.loc[_mask, "f1"].values
+        if len(_vals) == 0:
+            continue
+        _data_by_bin.append(_vals)
+        _center = (_interval.left + _interval.right) / 2
+        _positions.append(_center)
+        # Format as ".2 - .3" (remove leading zeros, use space-dash-space)
+        _left_str = f"{_interval.left:.1f}".replace("0.", ".")
+        _right_str = f"{_interval.right:.1f}".replace("0.", ".")
+        _xtick_labels.append(f"{_left_str}-{_right_str}")
+        _n_labels.append(_vals.size)
 
-    # bin centers for plotting
-    centers = [interval.mid for interval in median_by_bin.index.categories]
+    _fig = plt.figure(figsize=(5, 5))
+    _ax = plt.gca()
 
-    plt.plot(
-        centers,
-        median_by_bin.values,
-        color="#002d9c",
-        linewidth=2,
-        label="binned median F1",
+    # --- Boxplot across 0.1-binned identities ---
+    _bp = _ax.boxplot(
+        _data_by_bin,
+        positions=_positions,
+        widths=0.075,
+        patch_artist=True,
+        boxprops=dict(facecolor="#1192e8", color="black", alpha=0.50),
+        medianprops=dict(color="black", linewidth=1.5),
+        whiskerprops=dict(color="black"),
+        capprops=dict(color="black"),
+        flierprops=dict(
+            marker="o",
+            markersize=2,
+            markerfacecolor="black",
+            markeredgecolor="none",
+            alpha=0.3,
+        ),
     )
 
     # --- Labels / aesthetics ---
-    plt.xlabel("PyOpal identity")
-    plt.xlim(0.2, 1)
-    plt.ylabel("F1 score (global)")
-    plt.title("global F1 vs pyopal identity for gc=2")
-    plt.grid(alpha=0.3)
-    plt.legend(loc="lower right")
-    plt.tight_layout()
+    _ax.set_xlabel("Pyopal identity", fontsize=11, labelpad=30)  # <-- add labelpad
+    _ax.set_ylabel("F1-score", fontsize=11)
+    _ax.set_title("Pyopal identity vs F1-score", fontsize=12)
+
+    _ax.set_xlim(0.2, 1.0)
+
+    if _positions:
+        _ax.set_xticks(_positions)
+        _ax.set_xticklabels(_xtick_labels, rotation=0.2, fontsize=10)
+
+        # Give tick labels a bit of space
+        _ax.tick_params(axis="x", pad=6)
+
+        # Put n-labels lower than before
+        for _pos, _n in zip(_positions, _n_labels):
+            _ax.text(
+                _pos,
+                -0.10,
+                f"n={_n}",
+                ha="center",
+                va="top",
+                fontsize=9,
+                rotation=-30,
+                transform=_ax.get_xaxis_transform(),
+                clip_on=False,  # <-- ensures it's not clipped
+            )
+
+    _ax.grid(alpha=0.3)
+
+    # Increase bottom margin so the external text has room
+    _fig.tight_layout(rect=[0, 0.22, 1, 0.98])
+    plt.savefig("plots/pyopal_vs_f1score.svg", format="svg")
     plt.show()
     return
 
@@ -359,17 +401,17 @@ def _(mo):
 
 @app.cell
 def _(f1_long, plt):
-    # --- Filter raw data for gc = 2 and base metric ---
-    gc0_subset = f1_long[
-        (f1_long["gc"] == 2) & (f1_long["metric"] == "base")
+    # --- Filter raw data for gc = 0 and base metric ---
+    _gc0_subset = f1_long[
+        (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
     ].copy()
 
     plt.figure(figsize=(5, 5))
 
     # --- Raw scatter ---
     plt.scatter(
-        gc0_subset["tm_score"],
-        gc0_subset["f1"],
+        _gc0_subset["tm_score"],
+        _gc0_subset["f1"],
         alpha=0.1,
         s=10,
         color="#009d9a",
@@ -377,12 +419,12 @@ def _(f1_long, plt):
     )
 
     # --- Compute median trendline (based on binning) ---
-    _median_by_bin = gc0_subset.groupby("id_bin_tmscore", observed=False)[
+    _median_by_bin = _gc0_subset.groupby("id_bin_tmscore", observed=True)[
         "f1"
     ].median()
 
     # bin centers for plotting
-    _centers = [interval.mid for interval in _median_by_bin.index.categories]
+    _centers = [interval.mid for interval in _median_by_bin.index]
 
     plt.plot(
         _centers,
@@ -394,14 +436,14 @@ def _(f1_long, plt):
 
     # --- Labels / aesthetics ---
     plt.xlabel("TM-score")
-    plt.xlim(0.3, 1)
+    plt.xlim(0.0, 1)
     plt.ylabel("Whole-cmap F1 score")
-    plt.title("Whole-cmap F1 score for gc=2 vs TM-score")
+    plt.title("Whole-cmap F1 score for gc=0 vs TM-score")
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
     plt.show()
-    return (gc0_subset,)
+    return
 
 
 @app.cell(hide_code=True)
@@ -413,18 +455,10 @@ def _(mo):
 
 
 @app.cell
-def _(f1_long):
-    gc0_subset_test = f1_long[
-        (f1_long["gc"] == 2) & (f1_long["metric"] == "base")
-    ].copy()
-    return
-
-
-@app.cell
 def _(LogNorm, f1_long, np, plt):
-    # --- Filter raw data for gc = 2 and base metric ---
+    # --- Filter raw data for gc = 0 and base metric ---
     _gc0_subset = f1_long[
-        (f1_long["gc"] == 2) & (f1_long["metric"] == "base")
+        (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
     ].copy()
 
     _x = _gc0_subset["tm_score"].to_numpy()
@@ -442,34 +476,18 @@ def _(LogNorm, f1_long, np, plt):
     cbar = plt.colorbar(h[3])
     cbar.set_label("Count (log scale)")
 
-    # --- Median trendline (based on existing id_bin_pyopal binning) ---
-    _median_by_pyopal = _gc0_subset.groupby("id_bin_pyopal", observed=False)[
-        "f1"
-    ].median()
-    _centers_pyopal = [
-        interval.mid for interval in _median_by_pyopal.index.categories
-    ]
-
-    plt.plot(
-        _centers_pyopal,
-        _median_by_pyopal.values,
-        linewidth=2,
-        label="Median F1 by PyOpal bins",
-    )
-
 
     # --- Median trendline (based on existing id_bin_tmscore binning) ---
-    _median_by_tmscore = _gc0_subset.groupby("id_bin_tmscore", observed=False)[
+    _median_by_tmscore = _gc0_subset.groupby("id_bin_tmscore", observed=True)[
         "f1"
     ].median()
-    _centers_tmscore = [
-        interval.mid for interval in _median_by_tmscore.index.categories
-    ]
+    _centers_tmscore = [interval.mid for interval in _median_by_tmscore.index]
 
     plt.plot(
         _centers_tmscore,
         _median_by_tmscore.values,
         linewidth=2,
+        color="black",
         label="Median F1 by TM-score bins",
     )
 
@@ -478,7 +496,7 @@ def _(LogNorm, f1_long, np, plt):
     plt.xlim(0.3, 1)
     plt.ylabel("Whole-cmap F1 score")
     plt.ylim(0.6, 1)
-    plt.title("Whole-cmap F1 score for gc=2 vs TM-score")
+    plt.title("Whole-cmap F1 score for gc=0 vs TM-score")
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
@@ -514,17 +532,17 @@ def _(f1_long, plt):
     )
 
     # --- Compute median trendline (based on binning) ---
-    _median_by_bin = gc0_subset_inh.groupby("id_bin_tmscore", observed=False)[
+    _median_by_bin = gc0_subset_inh.groupby("id_bin_tmscore", observed=True)[
         "f1"
     ].median()
 
     # bin centers for plotting
-    _centers = [interval.mid for interval in _median_by_bin.index.categories]
+    _centers = [interval.mid for interval in _median_by_bin.index]
 
     plt.plot(
         _centers,
         _median_by_bin.values,
-        color="#198038",
+        color="black",
         linewidth=2,
         label="binned median F1",
     )
@@ -550,14 +568,18 @@ def _(mo):
 
 
 @app.cell
-def _(gc0_subset, plt):
-    # --- Filter raw data for gc = 2 and base metric ---
+def _(f1_long, plt):
+    # --- Filter raw data for gc = 0 and base metric ---
     plt.figure(figsize=(5, 5))
+
+    _gc0_subset = f1_long[
+        (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
+    ].copy()
 
     # --- Raw scatter ---
     plt.scatter(
-        gc0_subset["pyopal_identity"],
-        gc0_subset["tm_score"],
+        _gc0_subset["pyopal_identity"],
+        _gc0_subset["tm_score"],
         alpha=0.1,
         s=10,
         color="#1192e8",
@@ -565,13 +587,11 @@ def _(gc0_subset, plt):
     )
 
     # --- Compute median trendline (based on binning) ---
-    _median_by_bin = gc0_subset.groupby("id_bin_pyopal", observed=False)[
-        "f1"
+    _median_by_bin = _gc0_subset.groupby("id_bin_pyopal", observed=True)[
+        "tm_score"
     ].median()
-
     # bin centers for plotting
-    _centers = [interval.mid for interval in _median_by_bin.index.categories]
-
+    _centers = [interval.mid for interval in _median_by_bin.index]
     plt.plot(
         _centers,
         _median_by_bin.values,
@@ -582,12 +602,113 @@ def _(gc0_subset, plt):
 
     # --- Labels / aesthetics ---
     plt.xlabel("Pyopal identity")
-    plt.xlim(0.3, 1)
+    plt.xlim(0.2, 1)
     plt.ylabel("TM-score")
     plt.title("Pyopal identity vs TM-score")
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
+    plt.show()
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## TM-score vs Pyopal identity boxplots
+    """)
+    return
+
+
+@app.cell
+def _(f1_long, pd, plt):
+    # --- Filter raw data for gc = 0 and base metric ---
+
+    _gc0_subset = f1_long[
+        (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
+    ].copy()
+
+    # --- Prepare 0.1 identity bins ---
+    _edges = [i / 10 for i in range(0, 11)]  # 0.0, 0.1, ..., 1.0
+    _bin_cats = pd.cut(
+        _gc0_subset["pyopal_identity"],
+        bins=_edges,
+        include_lowest=True,
+        right=True,
+    )
+
+    _data_by_bin = []
+    _positions = []
+    _xtick_labels = []
+    _n_labels = []
+    for _interval in _bin_cats.cat.categories:
+        _mask = _bin_cats == _interval
+        _vals = _gc0_subset.loc[_mask, "tm_score"].values
+        if len(_vals) == 0:
+            continue
+        _data_by_bin.append(_vals)
+        _center = (_interval.left + _interval.right) / 2
+        _positions.append(_center)
+        # Format as ".2-.3" (remove leading zeros, use dash)
+        _left_str = f"{_interval.left:.1f}".replace("0.", ".")
+        _right_str = f"{_interval.right:.1f}".replace("0.", ".")
+        _xtick_labels.append(f"{_left_str}-{_right_str}")
+        _n_labels.append(_vals.size)
+
+    _fig = plt.figure(figsize=(5, 5))
+    _ax = plt.gca()
+
+    # --- Boxplot across 0.1-binned identities ---
+    _bp = _ax.boxplot(
+        _data_by_bin,
+        positions=_positions,
+        widths=0.075,
+        patch_artist=True,
+        boxprops=dict(facecolor="#009d9a", color="black", alpha=0.50),
+        medianprops=dict(color="black", linewidth=1.5),
+        whiskerprops=dict(color="black"),
+        capprops=dict(color="black"),
+        flierprops=dict(
+            marker="o",
+            markersize=2,
+            markerfacecolor="black",
+            markeredgecolor="none",
+            alpha=0.3,
+        ),
+    )
+
+    # --- Labels / aesthetics ---
+    _ax.set_xlabel("Pyopal identity", fontsize=11, labelpad=30)
+    _ax.set_ylabel("TM-score", fontsize=11)
+    _ax.set_title("Pyopal identity vs TM-score", fontsize=12)
+
+    _ax.set_xlim(0.2, 1.0)
+
+    if _positions:
+        _ax.set_xticks(_positions)
+        _ax.set_xticklabels(_xtick_labels, rotation=0.2, fontsize=10)
+
+        # Give tick labels a bit of space
+        _ax.tick_params(axis="x", pad=6)
+
+        # Put n-labels lower than before
+        for _pos, _n in zip(_positions, _n_labels):
+            _ax.text(
+                _pos,
+                -0.10,
+                f"n={_n}",
+                ha="center",
+                va="top",
+                fontsize=9,
+                rotation=-30,
+                transform=_ax.get_xaxis_transform(),
+                clip_on=False,
+            )
+
+    _ax.grid(alpha=0.3)
+
+    # Increase bottom margin so the external text has room
+    _fig.tight_layout(rect=[0, 0.22, 1, 0.98])
     plt.show()
     return
 
@@ -695,11 +816,11 @@ def _(mo):
 
 
 @app.cell
-def _(extract_synthetic_gap_runs, full_results_df):
+def _(full_results_df, vh):
     def compute_gap_runs(row):
         q = row["pyopal_query_aln"]
         t = row["pyopal_target_aln"]
-        return extract_synthetic_gap_runs(q, t)
+        return vh.extract_synthetic_gap_runs(q, t)
 
 
     full_results_df["synthetic_gap_runs"] = full_results_df.apply(
@@ -757,6 +878,7 @@ def _(bootstrap_ci, full_results_df, gc_values, np, pd):
     # 3) Bootstrap summary per (gc, gap_bin)
     grouped = gap_events_df.groupby(["gc", "gap_bin"], observed=True)
 
+    # Compute bootstrap CI for each group
     gap_ev_summary = (
         grouped["f1_syn"]
         .apply(
@@ -765,17 +887,11 @@ def _(bootstrap_ci, full_results_df, gc_values, np, pd):
                 index=["median_f1", "low_ci", "high_ci"],
             )
         )
+        .unstack()
         .reset_index()
     )
 
-    gap_ev_summary = gap_ev_summary.pivot(
-        index=["gc", "gap_bin"], columns="level_2", values="f1_syn"
-    ).reset_index()
-
-    # remove the column axis name ("level_2")
-    gap_ev_summary.columns.name = None
-
-    # oreorder columns
+    # Ensure columns are in correct order
     gap_ev_summary = gap_ev_summary[
         ["gc", "gap_bin", "median_f1", "low_ci", "high_ci"]
     ]

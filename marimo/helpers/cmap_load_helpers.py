@@ -1,9 +1,6 @@
 import numpy as np
 import os
-import matplotlib.pyplot as plt
-import textwrap
 from glob import glob
-import pandas as pd
 
 def discover_pred_cmaps(results_cmaps_dir):
     """
@@ -76,45 +73,6 @@ def load_ground_truth_cmaps(ground_truth_cmaps_dir):
         gt[pid] = np.load(f)
     return gt
 
-def metrics_for_pair(pred: np.ndarray, true: np.ndarray, pid: str | None = None):
-    """
-    Compute precision, recall, F1 for a single pair of cmaps.
-    Reuses your existing f1_from_binary.
-    """
-    if pid is not None:
-        assert pred.shape == true.shape, f"Shape mismatch for {pid}: {pred.shape} vs {true.shape}"
-    else:
-        assert pred.shape == true.shape, f"Shape mismatch: {pred.shape} vs {true.shape}"
-
-    prec, rec, f1 = f1_from_binary(pred, true)
-    return prec, rec, f1
-
-def add_f1_columns(main_results_df, gc_values, ground_truth_cmaps,
-                   query_col="query", idbin_col="idbin",
-                   path_prefix="cmap_path_gc", f1_prefix="f1_gc"):
-    def compute_row_f1(row, gc):
-        path_col = f"{path_prefix}{gc}"
-        path = row[path_col]
-        if pd.isna(path):
-            return np.nan
-
-        pid = row[query_col]
-        true = ground_truth_cmaps.get(pid)
-        if true is None:
-            return np.nan
-
-        pred = np.load(path)
-        _, _, f1 = metrics_for_pair(pred, true, pid=pid)
-        return f1
-
-    for gc in gc_values:
-        colname = f"{f1_prefix}{gc}"
-        main_results_df[colname] = main_results_df.apply(
-            lambda row, g=gc: compute_row_f1(row, g),
-            axis=1,
-        )
-
-    return main_results_df
 
 def discover_ground_truth_cmap_paths(ground_truth_cmaps_dir):
     """

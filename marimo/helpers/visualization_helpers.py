@@ -1,115 +1,11 @@
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 import numpy as np
-from collections import defaultdict
 import pandas as pd
 import os
 from functools import lru_cache
-from Bio.PDB import PDBParser, MMCIFParser
-from matplotlib.colors import ListedColormap, BoundaryNorm
 import matplotlib.gridspec as gridspec
-
-def plot_f1_by_identity_bin_df(
-    f1_long,
-    out_path="benchmark_plots/f1_scores_western_blots.png",
-    figsize=None,
-    colormap=plt.cm.tab10,
-    save=True,
-    idbin_col="idbin",
-    gc_col="gc",
-    f1_col="f1",
-):
-    """
-    Plot F1 scores per identity bin and gc from a tidy DataFrame.
-
-    f1_long: DataFrame with columns [idbin_col, gc_col, f1_col]
-    """
-
-    # group by identity bin, then we'll iterate bins
-    bin_values = sorted(f1_long[idbin_col].unique())
-    n_bins = len(bin_values)
-
-    if figsize is None:
-        _figsize = (4 * max(1, n_bins), 5)
-    else:
-        _figsize = figsize
-
-    fig, axes = plt.subplots(1, max(1, n_bins), figsize=_figsize, sharey=True)
-
-    if n_bins == 1:
-        axes = [axes]
-
-    for ax, idbin in zip(axes, bin_values):
-        sub = f1_long[f1_long[idbin_col] == idbin]
-        if sub.empty:
-            ax.set_title(f"id={idbin}\n(n=0)")
-            continue
-
-        gc_values = sorted(sub[gc_col].unique())
-
-        # colors for each gc
-        try:
-            cmap = colormap
-            n_groups = max(1, len(gc_values))
-            colors = [cmap(i / max(1, n_groups - 1)) for i in range(n_groups)]
-        except Exception:
-            colors = ["C0"] * len(gc_values)
-
-        positions = []
-        xticks = []
-        bin_ns = []
-
-        pos = 1
-        for i, gc in enumerate(gc_values):
-            data = sub.loc[sub[gc_col] == gc, f1_col].dropna().values
-            if data.size == 0:
-                continue
-
-            bin_ns.append(len(data))
-
-            # boxplot
-            ax.boxplot(
-                [data],
-                positions=[pos],
-                widths=0.3,
-                showfliers=False,
-                patch_artist=True,
-                boxprops={"facecolor": colors[i], "edgecolor": "k"},
-                medianprops={"linewidth": 1.3, "color": "white"},
-                whiskerprops={"color": "k"},
-                capprops={"color": "k"},
-            )
-
-            # scatter jitter
-            x_jitter = np.random.normal(pos, 0.04, size=len(data))
-            ax.scatter(
-                x_jitter,
-                data,
-                alpha=0.4,
-                s=18,
-                facecolor=colors[i],
-                edgecolor="k",
-                linewidth=0.2,
-            )
-
-            positions.append(pos)
-            xticks.append(f"gc={gc}")
-            pos += 1
-
-        n_bin = max(bin_ns) if bin_ns else 0
-        ax.set_title(f"id={idbin}\n(n={n_bin})")
-        ax.set_xticks(positions)
-        ax.set_xticklabels(xticks, rotation=45, ha="right")
-        ax.grid(axis="y", alpha=0.25)
-
-    axes[0].set_ylabel("F1 score")
-    fig.suptitle("F1 by identity bin and generate_contacts", y=1.02)
-    plt.tight_layout()
-
-    if save and out_path:
-        plt.savefig(out_path, bbox_inches="tight")
-
-    return plt.gca()
+from helpers.gc_benchmark_helpers import make_pair_masks_from_alignments
 
 def sample_examples_by_dense_bin(df, n_per_bin=10, seed=0):
     """
@@ -137,65 +33,10 @@ def sample_examples_by_dense_bin(df, n_per_bin=10, seed=0):
 
     return pd.concat(sampled_list, ignore_index=True)
 
-def residue_mask_from_alignments(query_aln: str, target_aln: str, n: int | None = None):
-    """
-    Build a 1D boolean mask over query residues that matches align_contact_map:
-
-      - iterate over alignment columns
-      - skip positions where query_aln[i] == '-'
-      - for each query residue:
-          True  -> aligned to a target residue (target_aln[i] != '-')
-                   => structural / inherited
-          False -> from column where target_aln[i] == '-'
-                   => synthetic (insertion in query)
-
-    If n is given and len(mask) != n, we trim or pad with False.
-    """
-    assert len(query_aln) == len(target_aln), "alignment lengths differ"
-
-    is_struct = []
-    for q, t in zip(query_aln, target_aln):
-        if q == "-":
-            continue
-        if t == "-":
-            is_struct.append(False)
-        else:
-            is_struct.append(True)
-
-    mask = np.array(is_struct, dtype=bool)
-
-    if n is not None and len(mask) != n:
-        print(
-            f"[WARN] residue_mask_from_alignments: len(mask)={len(mask)} != n={n}. "
-            "Trimming or padding with False."
-        )
-        if len(mask) > n:
-            mask = mask[:n]
-        else:
-            pad = np.zeros(n - len(mask), dtype=bool)
-            mask = np.concatenate([mask, pad])
-
-    return mask
-
-def make_pair_masks_from_alignments(query_aln: str, target_aln: str, n: int):
-    """
-    Build NxN masks:
-      mask_struct   : both residues inherited (aligned to target)
-      mask_synthetic: at least one residue is a query insertion (synthetic)
-    """
-    is_struct = residue_mask_from_alignments(query_aln, target_aln, n=n)
-    assert len(is_struct) == n, f"len(is_struct)={len(is_struct)} != n={n}"
-
-    mask_struct = np.outer(is_struct, is_struct)
-    mask_synthetic = ~mask_struct
-
-    return mask_struct, mask_synthetic
-
 
 @lru_cache(None)
 def load_cmap(path):
     return np.load(path)
-
 
 # 0: bg, 1: FN, 2: FP, 3: TP, 4: diag
 _conf_colors = ["white", "tab:blue", "tab:red", "tab:green", "black"]
@@ -238,10 +79,6 @@ def make_confusion_matrix_map(pred, true, region_mask, include_diag: bool = True
         viz[diag] = 4
 
     return viz
-
-@lru_cache(None)
-def load_cmap(path):
-    return np.load(path)
 
 
 def plot_example_row_cmap_only(
@@ -377,77 +214,6 @@ def plot_example_row_cmap_only(
         plt.show()
     else:
         plt.close(fig)
-
-def make_confusion_matrix_map(pred, true, region_mask, include_diag=True):
-    """
-    Build an int-coded matrix for visualization:
-
-       0 = outside region (background)
-       1 = FN: true 1, pred 0
-       2 = FP: true 0, pred 1
-       3 = TP: true 1, pred 1
-       4 = diagonal
-
-    region_mask: boolean NxN mask (e.g. inherited or synthetic region)
-    include_diag: if True, mark diagonal separately as 4
-    """
-    assert pred.shape == true.shape == region_mask.shape
-    n = pred.shape[0]
-
-    pred_bin = (pred > 0)
-    true_bin = (true > 0)
-
-    diag = np.eye(n, dtype=bool)
-
-    region_no_diag = region_mask & ~diag
-
-    tp = pred_bin & true_bin & region_no_diag
-    fp = pred_bin & ~true_bin & region_no_diag
-    fn = ~pred_bin & true_bin & region_no_diag
-
-    viz = np.zeros_like(pred, dtype=np.int8)
-
-    viz[fn] = 1
-    viz[fp] = 2
-    viz[tp] = 3
-
-    if include_diag:
-        viz[diag] = 4
-
-    return viz
-
-@lru_cache(None)
-def load_ca_coords(struct_path: str) -> np.ndarray:
-    """
-    Load Cα coordinates from a PDB or mmCIF file.
-    Returns an (N, 3) array. If parsing fails, returns an empty array.
-    """
-    struct_path = str(struct_path)
-
-    if struct_path.endswith(".cif"):
-        parser = MMCIFParser(QUIET=True)
-    else:
-        parser = PDBParser(QUIET=True)
-
-    try:
-        structure = parser.get_structure("struct", struct_path)
-    except Exception as e:
-        print(f"[WARN] Failed to parse structure {struct_path}: {e}")
-        return np.zeros((0, 3), dtype=float)
-
-    coords = []
-    for atom in structure.get_atoms():
-        if atom.get_name() == "CA":
-            coords.append(atom.get_coord())
-
-    if not coords:
-        return np.zeros((0, 3), dtype=float)
-
-    coords = np.array(coords, dtype=float)
-
-    # center for nicer display
-    coords -= coords.mean(axis=0, keepdims=True)
-    return coords
 
 ############################################################
 ################### Gap size benchmark ####################

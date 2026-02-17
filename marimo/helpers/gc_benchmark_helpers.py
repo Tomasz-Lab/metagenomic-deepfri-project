@@ -151,282 +151,6 @@ def f1_from_binary_masked(pred: np.ndarray,
     f1        = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
 
     return precision, recall, f1, tp, fp, fn
-    
-def eval_one(pred: np.ndarray,
-             true: np.ndarray,
-             query_alignment: str,
-             target_alignment: str,
-             generated_contacts: int):
-    assert pred.shape == true.shape
-
-    Lq = pred.shape[0]
-    non_diag = ~np.eye(Lq, dtype=bool)
-
-    # 1) build generated mask from alignment (Python-only)
-    gen_mask = build_generated_mask(query_alignment, target_alignment, generated_contacts)
-
-    # 2) provenance from pred + gen_mask
-    prov = build_provenance_from_pred(pred, gen_mask)
-
-    # 3) masks
-    mask_all       = non_diag
-    mask_inherited = (prov == 1) & non_diag
-    mask_generated = (prov == 2) & non_diag
-
-    # 4) metrics
-    prec_all, rec_all, f1_all, *_ = f1_from_binary_masked(pred, true, mask_all)
-    prec_inh, rec_inh, f1_inh, *_ = f1_from_binary_masked(pred, true, mask_inherited)
-    prec_gen, rec_gen, f1_gen, *_ = f1_from_binary_masked(pred, true, mask_generated)
-
-    return {
-        "prec_all": prec_all, "rec_all": rec_all, "f1_all": f1_all,
-        "prec_inh": prec_inh, "rec_inh": rec_inh, "f1_inh": f1_inh,
-        "prec_gen": prec_gen, "rec_gen": rec_gen, "f1_gen": f1_gen,
-    }
-
-def load_alignments_fasta(path):
-    """
-    Robust parser for PyOpal-style alignment FASTA.
-
-    Expected pattern, but allowing wrapped sequences:
-
-        >AF-K9P698-F1-model_v4|target=...
-        MTPSL...
-        (possibly more seq1 lines)
-        >AF-A0A1J0PB53-F1-model_v4|query=...
-        MTPSL...
-        (possibly more seq2 lines)
-        #alignment_string: MMMMM...
-
-    Returns:
-        alignments: dict
-            query_id -> {
-                "query_alignment":  str,
-                "target_alignment": str,
-                "alignment_string": str,
-                "target_id":        str,
-            }
-    """
-    alignments = {}
-
-    with open(path) as f:
-        lines = [l.rstrip("\n") for l in f]
-
-    i = 0
-    n = len(lines)
-
-    while i < n:
-        # skip empty lines
-        if not lines[i].strip():
-            i += 1
-            continue
-
-        # first header
-        if not lines[i].startswith(">"):
-            # unexpected line; skip and continue
-            # you can print a warning if you want:
-            # print(f"Skipping unexpected line in {path}: {lines[i]!r}")
-            i += 1
-            continue
-
-        header1 = lines[i].strip()
-        i += 1
-
-        # seq1: until next header or alignment_string
-        seq1_parts = []
-        while i < n and not lines[i].startswith(">") and not lines[i].startswith("#alignment_string"):
-            if lines[i].strip():
-                seq1_parts.append(lines[i].strip())
-            i += 1
-        seq1 = "".join(seq1_parts)
-
-        if i >= n or not lines[i].startswith(">"):
-            # malformed block; no second header
-            # print(f"Warning: incomplete alignment block after {header1}")
-            break
-
-        # second header
-        header2 = lines[i].strip()
-        i += 1
-
-        # seq2: until alignment_string or next header (but we expect alignment_string)
-        seq2_parts = []
-        while i < n and not lines[i].startswith("#alignment_string") and not lines[i].startswith(">"):
-            if lines[i].strip():
-                seq2_parts.append(lines[i].strip())
-            i += 1
-        seq2 = "".join(seq2_parts)
-
-        if i >= n or not lines[i].startswith("#alignment_string"):
-            # malformed block; no alignment_string
-            # print(f"Warning: missing alignment_string for {header1} / {header2}")
-            break
-
-        aln_line = lines[i].strip()
-        i += 1
-
-        # parse alignment_string
-        try:
-            aln_str = aln_line.split(":", 1)[1].strip()
-        except IndexError:
-            # malformed alignment_string line
-            # print(f"Warning: bad alignment_string line: {aln_line!r}")
-            continue
-
-        # first ID = query id, second = target id (same convention as before)
-        id1 = header1[1:].split("|")[0]
-        id2 = header2[1:].split("|")[0]
-
-        alignments[id1] = {
-            "query_alignment":  seq1,
-            "target_alignment": seq2,
-            "alignment_string": aln_str,
-            "target_id":        id2,
-        }
-
-    return alignments
-
-def plot_cmap_with_alignments(true_cmap: np.ndarray,
-                              pred_cmap: np.ndarray,
-                              pid: str,
-                              setting_label: str,
-                              query_alignment: str,
-                              target_alignment: str,
-                              alignment_string: str,
-                              f1_value: float,
-                              out_dir: str,
-                              wrap_width: int = 120):
-    """
-    Make a figure with:
-      - top: 2 subplots (GT cmap, predicted cmap)
-      - bottom: query + target alignments, alignment_string, and F1 score as text
-    """
-
-    assert true_cmap.shape == pred_cmap.shape, (
-        f"Shape mismatch for {pid}: {true_cmap.shape} vs {pred_cmap.shape}"
-    )
-
-    os.makedirs(out_dir, exist_ok=True)
-
-    # A bit taller to give room for text
-    fig, axes = plt.subplots(
-    1, 2,
-    figsize=(10, 4),
-    sharex=True, sharey=True,
-    constrained_layout=True,
-)
-    gs = fig.add_gridspec(2, 2, height_ratios=[3, 1])
-
-    ax_true = fig.add_subplot(gs[0, 0])
-    ax_pred = fig.add_subplot(gs[0, 1])
-    ax_text = fig.add_subplot(gs[1, :])  # spans both columns
-
-    vmin, vmax = 0, 1
-
-    # --- top: contact maps ---
-    im0 = ax_true.imshow(true_cmap, vmin=vmin, vmax=vmax, origin="lower")
-    ax_true.set_title("Ground truth")
-    ax_true.set_xlabel("Residue index")
-    ax_true.set_ylabel("Residue index")
-
-    im1 = ax_pred.imshow(pred_cmap, vmin=vmin, vmax=vmax, origin="lower")
-    ax_pred.set_title("Predicted")
-    ax_pred.set_xlabel("Residue index")
-    ax_pred.set_ylabel("Residue index")
-
-    # Shared colorbar
-    cbar = fig.colorbar(im1, ax=[ax_true, ax_pred], shrink=0.8, pad=0.02)
-    cbar.set_label("Contact (0/1)")
-
-    # --- bottom: alignments + alignment_string + F1 ---
-    ax_text.axis("off")
-
-    # wrap all three to the same width so they’re visually aligned
-    q_wrapped = textwrap.fill(query_alignment,    width=wrap_width)
-    t_wrapped = textwrap.fill(target_alignment,   width=wrap_width)
-    a_wrapped = textwrap.fill(alignment_string,   width=wrap_width)
-
-    text = (
-        f"Query ID:  {pid}\n"
-        f"Query aln:\n{q_wrapped}\n\n"
-        f"Target ({setting_label}) aln:\n{t_wrapped}\n\n"
-        f"Alignment string:\n{a_wrapped}\n\n"
-        f"F1 (contacts): {f1_value:.3f}"
-    )
-
-    ax_text.text(
-        0.01, 0.98, text,
-        transform=ax_text.transAxes,
-        va="top",
-        ha="left",
-        family="monospace",
-        fontsize=8,
-    )
-
-    # Keep suptitle inside the figure
-    fig.suptitle(f"{pid}   [{setting_label}]", fontsize=11, y=0.99)
-
-    out_path = os.path.join(out_dir, f"{pid}_{setting_label}.png")
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
-
-
-def build_pred_cmaps_arrays(cmap_paths_by_setting):
-    """
-    From (idbin_str, gc) -> {pid: path}
-    to (idbin_str, gc) -> {pid: np.ndarray}
-    """
-    pred_cmaps = {}
-    for setting, pid_to_path in cmap_paths_by_setting.items():
-        cmaps_for_setting = {}
-        for pid, path in pid_to_path.items():
-            cmaps_for_setting[pid] = np.load(path)
-        pred_cmaps[setting] = cmaps_for_setting
-    return pred_cmaps
-
-def run_all_f1(pred_cmaps, ground_truth_cmaps, setting_labels, compare_setting):
-    """
-    pred_cmaps: (idbin_str, gc) -> {pid: cmap_array}
-    ground_truth_cmaps: pid -> cmap_array
-    setting_labels: (idbin_str, gc) -> nice label string
-    compare_setting: function(pred_maps_dict, ground_truth_cmaps_dict) -> result
-    """
-    results = {}
-    for setting, pred_maps in pred_cmaps.items():
-        label = setting_labels.get(setting, str(setting))
-        print("Processing", label)
-        results[label] = compare_setting(pred_maps, ground_truth_cmaps)
-    return results
-
-def make_f1_long_df(main_results_df, gc_values,
-                    idbin_col="idbin",
-                    f1_prefix="f1_gc"):
-    value_vars = [f"{f1_prefix}{gc}" for gc in gc_values]
-
-    f1_long = main_results_df.melt(
-        id_vars=[idbin_col],
-        value_vars=value_vars,
-        var_name="gc_col",
-        value_name="f1",
-    )
-
-    # extract gc index from 'f1_gc0' -> 0, 'f1_gc2' -> 2
-    f1_long["gc"] = f1_long["gc_col"].str.replace(f1_prefix, "", regex=False).astype(int)
-    f1_long = f1_long.drop(columns=["gc_col"])
-
-    # drop rows without F1
-    f1_long = f1_long.dropna(subset=["f1"])
-
-    return f1_long
-
-def add_ground_truth_path_column(main_results_df, ground_truth_paths,
-                                 query_col="query", prefix="gt_cmap_path"):
-    """
-    Add column 'gt_cmap_path' that maps main_results_df[query] -> ground truth cmap file path.
-    """
-    colname = prefix
-    main_results_df[colname] = main_results_df[query_col].map(ground_truth_paths)
-    return main_results_df
 
 
 def parse_pyopal_to_df(pyopal_root):
@@ -441,16 +165,27 @@ def parse_pyopal_to_df(pyopal_root):
     We keep the *pair* of sequences and then select the header that contains '|query='
     to define (query, target, alignments).
     """
+    # Move parse_header outside loop for better performance
+    def parse_header(h):
+        parts = h.split("|")
+        seq_id = parts[0]
+        attrs = {
+            p.split("=", 1)[0]: p.split("=", 1)[1]
+            for p in parts[1:] if "=" in p
+        }
+        return seq_id, attrs
+
     records = []
-
-    for bin_dir_name in os.listdir(pyopal_root):
-        if not bin_dir_name.startswith("identity_bin_"):
-            continue
-
+    
+    # Get all bin directories first for progress tracking
+    bin_dirs = [
+        d for d in os.listdir(pyopal_root)
+        if d.startswith("identity_bin_") and os.path.isdir(os.path.join(pyopal_root, d))
+    ]
+    bin_dirs.sort()  # process in consistent order
+    
+    for bin_idx, bin_dir_name in enumerate(bin_dirs, 1):
         bin_dir = os.path.join(pyopal_root, bin_dir_name)
-        if not os.path.isdir(bin_dir):
-            continue
-
         idbin_str = bin_dir_name.replace("identity_bin_", "")
 
         fasta_path = os.path.join(bin_dir, "afdb_uniprot_v4_raw_alignments.fasta")
@@ -498,61 +233,42 @@ def parse_pyopal_to_df(pyopal_root):
                     seq2 = "".join(seq2_lines)
 
                     # Parse headers into id + attrs dict
-                    def parse_header(h):
-                        parts = h.split("|")
-                        seq_id = parts[0]
-                        attrs = {
-                            p.split("=", 1)[0]: p.split("=", 1)[1]
-                            for p in parts[1:] if "=" in p
-                        }
-                        return seq_id, attrs
-
                     id1, attrs1 = parse_header(header1)
                     id2, attrs2 = parse_header(header2)
 
                     # We want the header that has '|query='
                     # According to your original logic, that's the one that defines (query, target).
-                    header_q = None
-                    attrs_q = None
-                    seq_q_header_id = None
-                    other_header = None
-                    seq1_id = id1
-                    seq2_id = id2
-
+                    # seq1 corresponds to id1, seq2 to id2
+                    id_to_seq = {id1: seq1, id2: seq2}
+                    
                     if "query" in attrs1:
-                        header_q = header1
                         attrs_q = attrs1
-                        seq_q_header_id = id1
-                        other_header = (header2, attrs2, seq2)
-                        this_seq = seq1
-                        other_seq = seq2
+                        query_id = attrs1["query"]
+                        target_id = id1  # target is the ID from the header that contains query=
+                        # query_id might match id2 if header2 is the query sequence
+                        # target_id matches id1 (the structure being searched)
                     elif "query" in attrs2:
-                        header_q = header2
                         attrs_q = attrs2
-                        seq_q_header_id = id2
-                        other_header = (header1, attrs1, seq1)
-                        this_seq = seq2
-                        other_seq = seq1
+                        query_id = attrs2["query"]
+                        target_id = id2  # target is the ID from the header that contains query=
+                        # query_id might match id1 if header1 is the query sequence
+                        # target_id matches id2 (the structure being searched)
                     else:
                         # No '|query=' in either header: skip
                         header1 = header2 = None
                         seq1_lines = seq2_lines = []
                         continue
 
-                    query_id = attrs_q["query"]
-                    target_id = header_q.split("|")[0]
+                    # Map from IDs to sequences
+                    # query_id should match one of the header IDs (id1 or id2)
+                    # target_id is the structure ID from the header with query=
+                    query_aln  = id_to_seq.get(query_id, "")
+                    target_aln = id_to_seq.get(target_id, "")
 
                     # Retrieve identity/coverage/score from attrs_q
                     identity = float(attrs_q.get("identity", "nan"))
                     coverage = float(attrs_q.get("coverage", "nan"))
                     score    = float(attrs_q.get("score", "nan"))
-
-                    # Now we must map from IDs to sequences:
-                    # seq1 is for id1, seq2 is for id2
-                    id_to_seq = {id1: seq1, id2: seq2}
-
-                    query_aln  = id_to_seq.get(query_id, "")
-                    target_aln = id_to_seq.get(target_id, "")
 
                     if not query_aln or not target_aln:
                         # If mapping failed, still record basic info but leave aln strings empty
@@ -580,54 +296,13 @@ def parse_pyopal_to_df(pyopal_root):
                         seq1_lines.append(line)
                     elif header2 is not None:
                         seq2_lines.append(line)
+        
+        bin_records = len([r for r in records if r['idbin'] == idbin_str])
+        print(f"[INFO] Parsed {bin_dir_name}: {bin_records} records")
 
+    print(f"[INFO] Total records parsed: {len(records)}")
     return pd.DataFrame.from_records(records)
 
-
-def add_pyopal_to_df(
-    main_results_df,
-    pyopal_info,
-    idbin_col="idbin",
-    query_col="query",
-    target_col="target",
-    prefix="pyopal",
-):
-    """
-    Add columns:
-        pyopal_identity, pyopal_coverage, pyopal_score, pyopal_alignment_string
-    for each (idbin, query, target) pair.
-    """
-
-    def get_pyopal(row):
-        key = (row[idbin_col], row[query_col], row[target_col])
-        return pyopal_info.get(key)
-
-    identities = []
-    coverages = []
-    scores = []
-    align_strings = []
-
-    for _, row in main_results_df.iterrows():
-        info = get_pyopal(row)
-        if info is None:
-            identities.append(np.nan)
-            coverages.append(np.nan)
-            scores.append(np.nan)
-            align_strings.append(None)
-        else:
-            identities.append(info.get("identity", np.nan))
-            coverages.append(info.get("coverage", np.nan))
-            scores.append(info.get("score", np.nan))
-            align_strings.append(info.get("alignment_string"))
-
-    main_results_df[f"{prefix}_identity"] = identities
-    main_results_df[f"{prefix}_coverage"] = coverages
-    main_results_df[f"{prefix}_score"] = scores
-    main_results_df[f"{prefix}_alignment_string"] = align_strings
-
-    return main_results_df
-
-from glob import glob
 
 def discover_true_structures(true_struct_root):
     """
@@ -696,12 +371,9 @@ def add_structure_paths_to_df(
     # query true structure (no idbin dependence)
     main_results_df[query_prefix] = main_results_df[query_col].map(true_struct_paths)
 
-    # target hit structure depends on idbin
-    def get_hit_path(row):
-        key = (row[idbin_col], row[target_col])
-        return hit_struct_paths.get(key)
-
-    main_results_df[target_prefix] = main_results_df.apply(get_hit_path, axis=1)
+    # target hit structure depends on idbin - use vectorized operation
+    keys = main_results_df[[idbin_col, target_col]].apply(tuple, axis=1)
+    main_results_df[target_prefix] = keys.map(hit_struct_paths)
 
     return main_results_df
 
@@ -710,7 +382,7 @@ def add_prf1_columns_from_paths(
     gc_values,
     true_cmap_col: str = "true_cmap_path",
     pred_prefix: str = "cmap_path_gc",
-    out_prefix: str = "",  # you can set e.g. "base_" if you later add modified metrics
+    out_prefix: str = "",
 ):
     """
     For each gc in gc_values, add columns:
@@ -730,39 +402,64 @@ def add_prf1_columns_from_paths(
             cache[path] = np.load(path)
         return cache[path]
 
-    def compute_row_metrics(row, gc: int):
-        pred_path_col = f"{pred_prefix}{gc}"
-        pred_path = row[pred_path_col]
-        true_path = row[true_cmap_col]
-
-        # missing paths → NaN
-        if pd.isna(pred_path) or pd.isna(true_path):
-            return np.nan, np.nan, np.nan
-
-        pred = load_cached(pred_path, pred_cache)
-        true = load_cached(true_path, true_cache)
-
-        if pred is None or true is None:
-            return np.nan, np.nan, np.nan
-
-        try:
-            prec, rec, f1 = metrics_for_pair(pred, true, pid=row["query"])
-        except AssertionError as e:
-            # shape mismatch or something → mark as NaN, log if you want
-            print(f"[WARN] {e}")
-            return np.nan, np.nan, np.nan
-
-        return prec, rec, f1
-
+    # Pre-load all unique files into cache for better performance
+    print(f"[INFO] Pre-loading contact maps into cache...")
+    all_pred_paths = set()
+    all_true_paths = set()
     for gc in gc_values:
+        pred_path_col = f"{pred_prefix}{gc}"
+        if pred_path_col in df.columns:
+            all_pred_paths.update(df[pred_path_col].dropna().unique())
+    if true_cmap_col in df.columns:
+        all_true_paths.update(df[true_cmap_col].dropna().unique())
+    
+    # Load all files into cache
+    for path in all_pred_paths:
+        load_cached(path, pred_cache)
+    for path in all_true_paths:
+        load_cached(path, true_cache)
+    print(f"[INFO] Loaded {len(pred_cache)} prediction maps and {len(true_cache)} ground truth maps")
+
+    # Process each gc value
+    # Convert to list of rows for faster access (avoids repeated iloc calls)
+    rows_list = [row for _, row in df.iterrows()]
+    n_rows = len(df)
+    
+    for gc_idx, gc in enumerate(gc_values, 1):
+        print(f"[INFO] Computing metrics for gc={gc} ({gc_idx}/{len(gc_values)})...")
         prec_col = f"{out_prefix}prec_gc{gc}"
         rec_col  = f"{out_prefix}rec_gc{gc}"
         f1_col   = f"{out_prefix}f1_gc{gc}"
 
-        df[[prec_col, rec_col, f1_col]] = df.apply(
-            lambda row, g=gc: pd.Series(compute_row_metrics(row, g)),
-            axis=1,
-        )
+        # Use list comprehension with pre-loaded rows - much faster than df.apply()
+        results = []
+        for row in rows_list:
+            pred_path_col = f"{pred_prefix}{gc}"
+            pred_path = row[pred_path_col]
+            true_path = row[true_cmap_col]
+
+            # missing paths → NaN
+            if pd.isna(pred_path) or pd.isna(true_path):
+                results.append((np.nan, np.nan, np.nan))
+                continue
+
+            pred = load_cached(pred_path, pred_cache)
+            true = load_cached(true_path, true_cache)
+
+            if pred is None or true is None:
+                results.append((np.nan, np.nan, np.nan))
+                continue
+
+            try:
+                prec, rec, f1 = metrics_for_pair(pred, true, pid=row["query"])
+                results.append((prec, rec, f1))
+            except AssertionError as e:
+                print(f"[WARN] {e}")
+                results.append((np.nan, np.nan, np.nan))
+        
+        df[prec_col] = [r[0] for r in results]
+        df[rec_col] = [r[1] for r in results]
+        df[f1_col] = [r[2] for r in results]
 
     return df
 ##########################################################################################
@@ -874,49 +571,76 @@ def add_prf1_with_masks_from_paths(
             cache[path] = np.load(path)
         return cache[path]
 
-    def compute_row_metrics(row, gc: int):
-        pred_path_col = f"{pred_prefix}{gc}"
-        pred_path = row[pred_path_col]
-        true_path = row[true_cmap_col]
-        query_aln  = row[query_aln_col]
-        target_aln = row[target_aln_col]
-
-        if pd.isna(pred_path) or pd.isna(true_path) or pd.isna(query_aln) or pd.isna(target_aln):
-            return [np.nan] * 9
-
-        pred = load_cached(pred_path, pred_cache)
-        true = load_cached(true_path, true_cache)
-        if pred is None or true is None:
-            return [np.nan] * 9
-
-        try:
-            # base F1 over whole map
-            base_prec, base_rec, base_f1 = metrics_for_pair(pred, true, pid=row["query"])
-
-            n = pred.shape[0]
-            mask_struct, mask_syn = make_pair_masks_from_alignments(query_aln, target_aln, n=n)
-
-            inh_prec, inh_rec, inh_f1 = masked_prf1_from_binary(pred, true, mask_struct, pid=row["query"])
-            syn_prec, syn_rec, syn_f1 = masked_prf1_from_binary(pred, true, mask_syn, pid=row["query"])
-        except AssertionError as e:
-            print(f"[WARN] {e}")
-            return [np.nan] * 9
-
-        return [
-            base_prec, base_rec, base_f1,
-            inh_prec, inh_rec, inh_f1,
-            syn_prec, syn_rec, syn_f1,
-        ]
-
+    # Pre-load all unique files into cache for better performance
+    print(f"[INFO] Pre-loading contact maps into cache...")
+    all_pred_paths = set()
+    all_true_paths = set()
     for gc in gc_values:
+        pred_path_col = f"{pred_prefix}{gc}"
+        if pred_path_col in df.columns:
+            all_pred_paths.update(df[pred_path_col].dropna().unique())
+    if true_cmap_col in df.columns:
+        all_true_paths.update(df[true_cmap_col].dropna().unique())
+    
+    # Load all files into cache
+    for path in all_pred_paths:
+        load_cached(path, pred_cache)
+    for path in all_true_paths:
+        load_cached(path, true_cache)
+    print(f"[INFO] Loaded {len(pred_cache)} prediction maps and {len(true_cache)} ground truth maps")
+
+    # Process each gc value
+    # Convert to list of rows for faster access (avoids repeated iloc calls)
+    rows_list = [row for _, row in df.iterrows()]
+    n_rows = len(df)
+    
+    for gc_idx, gc in enumerate(gc_values, 1):
+        print(f"[INFO] Computing masked metrics for gc={gc} ({gc_idx}/{len(gc_values)})...")
         cols = [
             f"prec_gc{gc}", f"rec_gc{gc}", f"f1_gc{gc}",
             f"prec_inh_gc{gc}", f"rec_inh_gc{gc}", f"f1_inh_gc{gc}",
             f"prec_syn_gc{gc}", f"rec_syn_gc{gc}", f"f1_syn_gc{gc}",
         ]
-        df[cols] = df.apply(
-            lambda row, g=gc: pd.Series(compute_row_metrics(row, g)),
-            axis=1,
-        )
+        
+        # Use list comprehension with pre-loaded rows - much faster than df.apply()
+        results = []
+        for row in rows_list:
+            pred_path_col = f"{pred_prefix}{gc}"
+            pred_path = row[pred_path_col]
+            true_path = row[true_cmap_col]
+            query_aln  = row[query_aln_col]
+            target_aln = row[target_aln_col]
+
+            if pd.isna(pred_path) or pd.isna(true_path) or pd.isna(query_aln) or pd.isna(target_aln):
+                results.append([np.nan] * 9)
+                continue
+
+            pred = load_cached(pred_path, pred_cache)
+            true = load_cached(true_path, true_cache)
+            if pred is None or true is None:
+                results.append([np.nan] * 9)
+                continue
+
+            try:
+                # base F1 over whole map
+                base_prec, base_rec, base_f1 = metrics_for_pair(pred, true, pid=row["query"])
+
+                n = pred.shape[0]
+                mask_struct, mask_syn = make_pair_masks_from_alignments(query_aln, target_aln, n=n)
+
+                inh_prec, inh_rec, inh_f1 = masked_prf1_from_binary(pred, true, mask_struct, pid=row["query"])
+                syn_prec, syn_rec, syn_f1 = masked_prf1_from_binary(pred, true, mask_syn, pid=row["query"])
+                
+                results.append([
+                    base_prec, base_rec, base_f1,
+                    inh_prec, inh_rec, inh_f1,
+                    syn_prec, syn_rec, syn_f1,
+                ])
+            except AssertionError as e:
+                print(f"[WARN] {e}")
+                results.append([np.nan] * 9)
+        
+        for col_idx, col_name in enumerate(cols):
+            df[col_name] = [r[col_idx] for r in results]
 
     return df
