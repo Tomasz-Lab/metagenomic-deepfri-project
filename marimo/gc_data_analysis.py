@@ -19,12 +19,18 @@ def _():
     import matplotlib.pyplot as plt
     import matplotlib.style
     import importlib
+    import os
     from matplotlib.colors import LogNorm
     import pandas as pd
+    from pathlib import Path
+
+    PLOT_DIR = "plots"
+    RAW_DIR = os.path.join(PLOT_DIR, "raw_data")
+    os.makedirs(RAW_DIR, exist_ok=True)
 
     # save and display plots in whitemode
     matplotlib.style.use("default")
-    return LogNorm, importlib, mo, np, pd, plt
+    return LogNorm, Path, PLOT_DIR, RAW_DIR, importlib, mo, np, os, pd, plt
 
 
 @app.cell
@@ -149,7 +155,7 @@ def _(mo):
 
 
 @app.cell
-def _(full_results_df, np, plt):
+def _(PLOT_DIR, RAW_DIR, full_results_df, np, pd, plt):
     # --- Filter raw data for gc = 2 and base metric ---
     _subset = full_results_df[["query", "fident", "pyopal_identity"]]
 
@@ -187,6 +193,8 @@ def _(full_results_df, np, plt):
     plt.title("Identity comparison")
     plt.grid(alpha=0.3)
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/pyopal_vs_mmseqs2_identity.svg", bbox_inches="tight")
+    _subset.to_csv(f"{RAW_DIR}/pyopal_vs_mmseqs2_identity.csv", index=False)
     plt.show()
     return
 
@@ -200,7 +208,7 @@ def _(mo):
 
 
 @app.cell
-def _(full_results_df, plt):
+def _(PLOT_DIR, RAW_DIR, full_results_df, pd, plt):
     # count unique queries per id_bin
     _counts = (
         full_results_df.groupby("id_bin_mmseqs2")["query"].nunique().reset_index()
@@ -222,6 +230,8 @@ def _(full_results_df, plt):
     plt.ylabel("% of all queries")
     plt.title("Succesful structure hits")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/group_size.svg", bbox_inches="tight")
+    _counts.to_csv(f"{RAW_DIR}/group_size.csv", index=False)
     plt.show()
     return
 
@@ -235,45 +245,140 @@ def _(mo):
 
 
 @app.cell
-def _(f1_long, pd, plt):
-    # --- Filter raw data for gc = 2 and base metric ---
-    _gc2_subset = f1_long[
-        (f1_long["gc"] == 2) & (f1_long["metric"] == "base")
+def _(PLOT_DIR, Path, RAW_DIR, f1_long, np, pd, plt):
+    # -----------------------
+    # Config
+    # -----------------------
+    _gc = 2
+    _metric = "base"
+    _out_prefix = "pyopal_vs_f1score"
+    _outdir = Path(PLOT_DIR)
+    _rawdir = Path(RAW_DIR)
+
+    _edges = np.linspace(0.0, 1.0, 11)  # 0.0, 0.1, ..., 1.0
+    _labels = list(range(len(_edges) - 1))  # 0..9
+
+    # -----------------------
+    # Subset + binning
+    # -----------------------
+    _gc2 = f1_long.loc[
+        (f1_long["gc"] == _gc) & (f1_long["metric"] == _metric)
     ].copy()
 
-    # --- Prepare 0.1-wide bins across PyOpal identity ---
-    _edges = [i / 10 for i in range(0, 11)]  # 0.0, 0.1, ..., 1.0
-    _bin_cats = pd.cut(
-        _gc2_subset["pyopal_identity"],
+    _gc2["bin_index"] = pd.cut(
+        _gc2["pyopal_identity"],
+        bins=_edges,
+        include_lowest=True,
+        right=True,
+        labels=_labels,
+    ).astype("Int64")
+
+    _interval = pd.cut(
+        _gc2["pyopal_identity"],
         bins=_edges,
         include_lowest=True,
         right=True,
     )
+    _gc2["bin_left"] = _interval.map(
+        lambda x: float(x.left) if pd.notna(x) else pd.NA
+    )
+    _gc2["bin_right"] = _interval.map(
+        lambda x: float(x.right) if pd.notna(x) else pd.NA
+    )
 
-    # Collect F1 values per bin and compute positions/labels
-    _data_by_bin = []
-    _positions = []
-    _xtick_labels = []
-    _n_labels = []
-    for _interval in _bin_cats.cat.categories:
-        _mask = _bin_cats == _interval
-        _vals = _gc2_subset.loc[_mask, "f1"].values
-        if len(_vals) == 0:
-            continue
-        _data_by_bin.append(_vals)
-        _center = (_interval.left + _interval.right) / 2
-        _positions.append(_center)
-        # Format as ".2 - .3" (remove leading zeros, use space-dash-space)
-        _left_str = f"{_interval.left:.1f}".replace("0.", ".")
-        _right_str = f"{_interval.right:.1f}".replace("0.", ".")
-        _xtick_labels.append(f"{_left_str}-{_right_str}")
-        _n_labels.append(_vals.size)
+    _left = (
+        _gc2["bin_left"]
+        .map(lambda v: f"{v:.1f}" if pd.notna(v) else pd.NA)
+        .astype("string")
+    )
+    _right = (
+        _gc2["bin_right"]
+        .map(lambda v: f"{v:.1f}" if pd.notna(v) else pd.NA)
+        .astype("string")
+    )
+    _gc2["bin_label"] = (_left + "-" + _right).str.replace("0.", ".", regex=False)
 
-    _fig = plt.figure(figsize=(5, 5))
-    _ax = plt.gca()
+    # -----------------------
+    # Source data export (Nature-ish)
+    # -----------------------
+    _id_cols = [
+        c for c in ["query", "target", "Protein", "pair_id"] if c in _gc2.columns
+    ]
+    _context_cols = [c for c in ["gc", "metric"] if c in _gc2.columns]
 
-    # --- Boxplot across 0.1-binned identities ---
-    _bp = _ax.boxplot(
+    _export_cols = (
+        _id_cols
+        + _context_cols
+        + [
+            "pyopal_identity",
+            "f1",
+            "bin_index",
+            "bin_left",
+            "bin_right",
+            "bin_label",
+        ]
+    )
+
+    _gc2.loc[:, _export_cols].to_csv(
+        _rawdir / f"{_out_prefix}__source_data.csv",
+        index=False,
+    )
+
+    # -----------------------
+    # Bin summary (robust) + plotting vectors
+    # -----------------------
+    _tmp = _gc2.dropna(subset=["bin_index"]).copy()
+
+    _counts = _tmp.groupby("bin_index", observed=True).size().reset_index(name="N")
+    _meta = _tmp[
+        ["bin_index", "bin_left", "bin_right", "bin_label"]
+    ].drop_duplicates("bin_index")
+
+    _bin_summary = (
+        _meta.merge(_counts, on="bin_index", how="left")
+        .sort_values("bin_index")
+        .reset_index(drop=True)
+    )
+
+    _bin_summary.to_csv(_rawdir / f"{_out_prefix}__bin_summary.csv", index=False)
+
+    # Build boxplot inputs directly from bin_index
+    _data_by_bin = [
+        _tmp.loc[_tmp["bin_index"] == int(r.bin_index), "f1"].to_numpy()
+        for r in _bin_summary.itertuples(index=False)
+    ]
+    _positions = [
+        0.5 * (float(r.bin_left) + float(r.bin_right))
+        for r in _bin_summary.itertuples(index=False)
+    ]
+
+    # Create proper range labels like "0.1-0.2"
+    _xtick_labels = [
+        f"{float(r.bin_left):.1f}-{float(r.bin_right):.1f}"
+        for r in _bin_summary.itertuples(index=False)
+    ]
+    _n_labels = _bin_summary["N"].astype(int).tolist()
+
+    # -----------------------
+    # Plot
+    # -----------------------
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    for _pos, _data in zip(_positions, _data_by_bin):
+        if len(_data) > 0:
+            # Add small random jitter to x-axis to spread points
+            _jitter = np.random.normal(0, 0.01, size=len(_data))
+            ax.scatter(
+                _pos + _jitter,
+                _data,
+                s=10,
+                alpha=0.3,
+                color="grey",
+                edgecolors="none",
+                zorder=1,
+            )
+
+    ax.boxplot(
         _data_by_bin,
         positions=_positions,
         widths=0.075,
@@ -282,48 +387,41 @@ def _(f1_long, pd, plt):
         medianprops=dict(color="black", linewidth=1.5),
         whiskerprops=dict(color="black"),
         capprops=dict(color="black"),
-        flierprops=dict(
-            marker="o",
-            markersize=2,
-            markerfacecolor="black",
-            markeredgecolor="none",
-            alpha=0.3,
-        ),
+        showfliers=False,
+        zorder=2,
     )
 
-    # --- Labels / aesthetics ---
-    _ax.set_xlabel("Pyopal identity", fontsize=11, labelpad=30)  # <-- add labelpad
-    _ax.set_ylabel("F1-score", fontsize=11)
-    _ax.set_title("Pyopal identity vs F1-score", fontsize=12)
+    ax.set_xlim(0.2, 1.0)
+    ax.set_ylabel("F1-score", fontsize=14)
+    ax.set_xlabel("Pyopal identity bins", fontsize=14, labelpad=30)
 
-    _ax.set_xlim(0.2, 1.0)
+    ax.set_xticks(_positions)
+    ax.set_xticklabels(_xtick_labels, rotation=30, fontsize=14)
+    ax.tick_params(axis="x", pad=6)
+    ax.tick_params(axis="y", labelsize=14)
 
-    if _positions:
-        _ax.set_xticks(_positions)
-        _ax.set_xticklabels(_xtick_labels, rotation=0.2, fontsize=10)
+    # Grey counts in parentheses under each bin
+    for _pos, _n in zip(_positions, _n_labels):
+        ax.text(
+            _pos,
+            -0.12,  # lower than before to avoid overlap
+            f"({_n})",
+            ha="center",
+            va="top",
+            fontsize=10,
+            rotation=30,
+            color="0.5",
+            transform=ax.get_xaxis_transform(),
+        )
 
-        # Give tick labels a bit of space
-        _ax.tick_params(axis="x", pad=6)
+    ax.grid(alpha=0.3)
 
-        # Put n-labels lower than before
-        for _pos, _n in zip(_positions, _n_labels):
-            _ax.text(
-                _pos,
-                -0.10,
-                f"n={_n}",
-                ha="center",
-                va="top",
-                fontsize=9,
-                rotation=-30,
-                transform=_ax.get_xaxis_transform(),
-                clip_on=False,  # <-- ensures it's not clipped
-            )
+    # Save
+    fig.savefig(_outdir / f"{_out_prefix}.svg", format="svg", bbox_inches="tight")
+    fig.savefig(
+        _outdir / f"{_out_prefix}.pdf", format="pdf", bbox_inches="tight", dpi=300
+    )
 
-    _ax.grid(alpha=0.3)
-
-    # Increase bottom margin so the external text has room
-    _fig.tight_layout(rect=[0, 0.22, 1, 0.98])
-    plt.savefig("plots/pyopal_vs_f1score.svg", format="svg")
     plt.show()
     return
 
@@ -337,7 +435,7 @@ def _(mo):
 
 
 @app.cell
-def _(LogNorm, f1_long, np, plt):
+def _(LogNorm, PLOT_DIR, RAW_DIR, f1_long, np, pd, plt):
     # --- Filter raw data for gc = 2 and base metric ---
     _gc2_subset = f1_long[
         (f1_long["gc"] == 2) & (f1_long["metric"] == "base")
@@ -387,6 +485,8 @@ def _(LogNorm, f1_long, np, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/f1_vs_pyopal_heatmap.svg", bbox_inches="tight")
+    _gc2_subset[["pyopal_identity", "f1"]].to_csv(f"{RAW_DIR}/f1_vs_pyopal_heatmap.csv", index=False)
     plt.show()
     return
 
@@ -400,7 +500,7 @@ def _(mo):
 
 
 @app.cell
-def _(f1_long, plt):
+def _(PLOT_DIR, RAW_DIR, f1_long, plt):
     # --- Filter raw data for gc = 0 and base metric ---
     _gc0_subset = f1_long[
         (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
@@ -442,6 +542,8 @@ def _(f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/f1_vs_tmscore_scatter.svg", bbox_inches="tight")
+    _gc0_subset[["tm_score", "f1"]].to_csv(f"{RAW_DIR}/f1_vs_tmscore_scatter.csv", index=False)
     plt.show()
     return
 
@@ -455,7 +557,7 @@ def _(mo):
 
 
 @app.cell
-def _(LogNorm, f1_long, np, plt):
+def _(LogNorm, PLOT_DIR, RAW_DIR, f1_long, np, plt):
     # --- Filter raw data for gc = 0 and base metric ---
     _gc0_subset = f1_long[
         (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
@@ -500,6 +602,8 @@ def _(LogNorm, f1_long, np, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/f1_vs_tmscore_heatmap.svg", bbox_inches="tight")
+    _gc0_subset[["tm_score", "f1"]].to_csv(f"{RAW_DIR}/f1_vs_tmscore_heatmap.csv", index=False)
     plt.show()
     return
 
@@ -513,7 +617,7 @@ def _(mo):
 
 
 @app.cell
-def _(f1_long, plt):
+def _(PLOT_DIR, RAW_DIR, f1_long, plt):
     # --- Filter raw data for gc = 2 and base metric ---
     gc0_subset_inh = f1_long[
         (f1_long["gc"] == 0) & (f1_long["metric"] == "inherited")
@@ -555,6 +659,8 @@ def _(f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/inherited_f1_vs_tmscore.svg", bbox_inches="tight")
+    gc0_subset_inh[["tm_score", "f1"]].to_csv(f"{RAW_DIR}/inherited_f1_vs_tmscore.csv", index=False)
     plt.show()
     return
 
@@ -568,7 +674,7 @@ def _(mo):
 
 
 @app.cell
-def _(f1_long, plt):
+def _(PLOT_DIR, RAW_DIR, f1_long, plt):
     # --- Filter raw data for gc = 0 and base metric ---
     plt.figure(figsize=(5, 5))
 
@@ -608,6 +714,8 @@ def _(f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/tmscore_vs_pyopal_scatter.svg", bbox_inches="tight")
+    _gc0_subset[["pyopal_identity", "tm_score"]].to_csv(f"{RAW_DIR}/tmscore_vs_pyopal_scatter.csv", index=False)
     plt.show()
     return
 
@@ -621,45 +729,137 @@ def _(mo):
 
 
 @app.cell
-def _(f1_long, pd, plt):
-    # --- Filter raw data for gc = 0 and base metric ---
+def _(PLOT_DIR, Path, RAW_DIR, f1_long, np, pd, plt):
+    # -----------------------
+    # Config
+    # -----------------------
+    _gc = 0
+    _metric = "base"
+    _out_prefix = "pyopal_identity_vs_tmscore"
+    _outdir = Path(PLOT_DIR)
+    _rawdir = Path(RAW_DIR)
 
-    _gc0_subset = f1_long[
-        (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
+    _edges = np.linspace(0.0, 1.0, 11)  # 0.0, 0.1, ..., 1.0
+    _labels = list(range(len(_edges) - 1))  # 0..9
+
+    # -----------------------
+    # Subset + binning
+    # -----------------------
+    _gc0 = f1_long.loc[
+        (f1_long["gc"] == _gc) & (f1_long["metric"] == _metric)
     ].copy()
 
-    # --- Prepare 0.1 identity bins ---
-    _edges = [i / 10 for i in range(0, 11)]  # 0.0, 0.1, ..., 1.0
-    _bin_cats = pd.cut(
-        _gc0_subset["pyopal_identity"],
+    _gc0["bin_index"] = pd.cut(
+        _gc0["pyopal_identity"],
+        bins=_edges,
+        include_lowest=True,
+        right=True,
+        labels=_labels,
+    ).astype("Int64")
+
+    _interval = pd.cut(
+        _gc0["pyopal_identity"],
         bins=_edges,
         include_lowest=True,
         right=True,
     )
+    _gc0["bin_left"] = _interval.map(
+        lambda x: float(x.left) if pd.notna(x) else pd.NA
+    )
+    _gc0["bin_right"] = _interval.map(
+        lambda x: float(x.right) if pd.notna(x) else pd.NA
+    )
 
-    _data_by_bin = []
-    _positions = []
-    _xtick_labels = []
-    _n_labels = []
-    for _interval in _bin_cats.cat.categories:
-        _mask = _bin_cats == _interval
-        _vals = _gc0_subset.loc[_mask, "tm_score"].values
-        if len(_vals) == 0:
-            continue
-        _data_by_bin.append(_vals)
-        _center = (_interval.left + _interval.right) / 2
-        _positions.append(_center)
-        # Format as ".2-.3" (remove leading zeros, use dash)
-        _left_str = f"{_interval.left:.1f}".replace("0.", ".")
-        _right_str = f"{_interval.right:.1f}".replace("0.", ".")
-        _xtick_labels.append(f"{_left_str}-{_right_str}")
-        _n_labels.append(_vals.size)
+    _left = (
+        _gc0["bin_left"]
+        .map(lambda v: f"{v:.1f}" if pd.notna(v) else pd.NA)
+        .astype("string")
+    )
+    _right = (
+        _gc0["bin_right"]
+        .map(lambda v: f"{v:.1f}" if pd.notna(v) else pd.NA)
+        .astype("string")
+    )
+    _gc0["bin_label"] = (_left + "-" + _right).str.replace("0.", ".", regex=False)
 
-    _fig = plt.figure(figsize=(5, 5))
-    _ax = plt.gca()
+    # -----------------------
+    # Source data export (optional but recommended)
+    # -----------------------
+    _id_cols = [
+        c for c in ["query", "target", "Protein", "pair_id"] if c in _gc0.columns
+    ]
+    _context_cols = [c for c in ["gc", "metric"] if c in _gc0.columns]
 
-    # --- Boxplot across 0.1-binned identities ---
-    _bp = _ax.boxplot(
+    _export_cols = (
+        _id_cols
+        + _context_cols
+        + [
+            "pyopal_identity",
+            "tm_score",
+            "bin_index",
+            "bin_left",
+            "bin_right",
+            "bin_label",
+        ]
+    )
+
+    _gc0.loc[:, _export_cols].to_csv(
+        _rawdir / f"{_out_prefix}__source_data.csv",
+        index=False,
+    )
+
+    # -----------------------
+    # Bin summary + plotting vectors
+    # -----------------------
+    _tmp = _gc0.dropna(subset=["bin_index"]).copy()
+
+    _counts = _tmp.groupby("bin_index", observed=True).size().reset_index(name="N")
+    _meta = _tmp[
+        ["bin_index", "bin_left", "bin_right", "bin_label"]
+    ].drop_duplicates("bin_index")
+
+    _bin_summary = (
+        _meta.merge(_counts, on="bin_index", how="left")
+        .sort_values("bin_index")
+        .reset_index(drop=True)
+    )
+
+    _bin_summary.to_csv(_rawdir / f"{_out_prefix}__bin_summary.csv", index=False)
+
+    _data_by_bin = [
+        _tmp.loc[_tmp["bin_index"] == int(r.bin_index), "tm_score"].to_numpy()
+        for r in _bin_summary.itertuples(index=False)
+    ]
+    _positions = [
+        0.5 * (float(r.bin_left) + float(r.bin_right))
+        for r in _bin_summary.itertuples(index=False)
+    ]
+    _xtick_labels = [
+        f"{float(r.bin_left):.1f}-{float(r.bin_right):.1f}"
+        for r in _bin_summary.itertuples(index=False)
+    ]
+    _n_labels = _bin_summary["N"].astype(int).tolist()
+
+    # -----------------------
+    # Plot
+    # -----------------------
+    _fig, _ax = plt.subplots(figsize=(6, 5))
+
+    for _pos, _data in zip(_positions, _data_by_bin):
+        if len(_data) > 0:
+            # Add small random jitter to x-axis to spread points
+            _jitter = np.random.normal(0, 0.01, size=len(_data))
+            _ax.scatter(
+                _pos + _jitter,
+                _data,
+                s=10,
+                alpha=0.3,
+                color="gray",
+                edgecolors="none",
+                zorder=1,
+            )
+
+    _ax.boxplot(
         _data_by_bin,
         positions=_positions,
         widths=0.075,
@@ -668,47 +868,35 @@ def _(f1_long, pd, plt):
         medianprops=dict(color="black", linewidth=1.5),
         whiskerprops=dict(color="black"),
         capprops=dict(color="black"),
-        flierprops=dict(
-            marker="o",
-            markersize=2,
-            markerfacecolor="black",
-            markeredgecolor="none",
-            alpha=0.3,
-        ),
+        showfliers=False,
     )
 
-    # --- Labels / aesthetics ---
-    _ax.set_xlabel("Pyopal identity", fontsize=11, labelpad=30)
-    _ax.set_ylabel("TM-score", fontsize=11)
-    _ax.set_title("Pyopal identity vs TM-score", fontsize=12)
-
     _ax.set_xlim(0.2, 1.0)
+    _ax.set_ylabel("TM-score", fontsize=14)
+    _ax.set_xlabel("Pyopal identity bins", fontsize=14, labelpad=30)
 
-    if _positions:
-        _ax.set_xticks(_positions)
-        _ax.set_xticklabels(_xtick_labels, rotation=0.2, fontsize=10)
+    _ax.set_xticks(_positions)
+    _ax.set_xticklabels(_xtick_labels, rotation=30, fontsize=14)
+    _ax.tick_params(axis="x", pad=6)
+    _ax.tick_params(axis="y", labelsize=14)
 
-        # Give tick labels a bit of space
-        _ax.tick_params(axis="x", pad=6)
-
-        # Put n-labels lower than before
-        for _pos, _n in zip(_positions, _n_labels):
-            _ax.text(
-                _pos,
-                -0.10,
-                f"n={_n}",
-                ha="center",
-                va="top",
-                fontsize=9,
-                rotation=-30,
-                transform=_ax.get_xaxis_transform(),
-                clip_on=False,
-            )
+    # Grey counts in parentheses under each bin
+    for _pos, _n in zip(_positions, _n_labels):
+        _ax.text(
+            _pos,
+            -0.12,
+            f"({_n})",
+            ha="center",
+            va="top",
+            rotation=30,
+            fontsize=10,
+            color="0.5",
+            transform=_ax.get_xaxis_transform(),
+        )
 
     _ax.grid(alpha=0.3)
 
-    # Increase bottom margin so the external text has room
-    _fig.tight_layout(rect=[0, 0.22, 1, 0.98])
+    _fig.savefig(_outdir / f"{_out_prefix}.svg", bbox_inches="tight", dpi=300)
     plt.show()
     return
 
@@ -722,7 +910,7 @@ def _(mo):
 
 
 @app.cell
-def _(bootstrap_ci, f1_long, plt):
+def _(PLOT_DIR, RAW_DIR, bootstrap_ci, f1_long, plt):
     # --- filter synthetic only ---
     synthetic_bootstrapped = (
         f1_long[f1_long["metric"] == "synthetic"]
@@ -757,6 +945,8 @@ def _(bootstrap_ci, f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/synthetic_f1_vs_pyopal.svg", bbox_inches="tight")
+    synthetic_bootstrapped.to_csv(f"{RAW_DIR}/synthetic_f1_vs_pyopal.csv", index=False)
     plt.show()
     return
 
@@ -770,7 +960,7 @@ def _(mo):
 
 
 @app.cell
-def _(bootstrap_ci, f1_long, plt):
+def _(PLOT_DIR, RAW_DIR, bootstrap_ci, f1_long, plt):
     # synthetic entries only
     all_identity_summary = (
         f1_long[f1_long["metric"] == "synthetic"]
@@ -803,6 +993,8 @@ def _(bootstrap_ci, f1_long, plt):
     plt.title("Global performance of gc on synthetic F1")
     plt.grid(alpha=0.3)
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/all_identity_gc_summary.svg", bbox_inches="tight")
+    all_identity_summary.to_csv(f"{RAW_DIR}/all_identity_gc_summary.csv", index=False)
     plt.show()
     return
 
@@ -899,7 +1091,7 @@ def _(bootstrap_ci, full_results_df, gc_values, np, pd):
 
 
 @app.cell
-def _(gap_ev_summary, np, plt):
+def _(PLOT_DIR, RAW_DIR, gap_ev_summary, np, plt):
     plt.figure(figsize=(11, 5))
 
     for _gc in sorted(gap_ev_summary["gc"].unique()):
@@ -915,6 +1107,8 @@ def _(gap_ev_summary, np, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="center right")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/gap_size_vs_synthetic_f1.svg", bbox_inches="tight")
+    gap_ev_summary.to_csv(f"{RAW_DIR}/gap_size_vs_synthetic_f1.csv", index=False)
     plt.show()
     return
 

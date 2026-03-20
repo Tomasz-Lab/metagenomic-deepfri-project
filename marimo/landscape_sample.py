@@ -21,6 +21,12 @@ def _(pd):
 
 @app.cell
 def _(coords):
+    coords
+    return
+
+
+@app.cell
+def _(coords):
     coords["is_cluster"].value_counts()
     return
 
@@ -28,6 +34,17 @@ def _(coords):
 @app.cell
 def _(coords):
     coords.query("origin")
+    return
+
+
+@app.cell
+def _(coords):
+    _df = coords[coords["afdb_pLDDT"].isna() | (coords["afdb_pLDDT"] >= 70)]
+    _df.reset_index()["protein"].to_csv(
+        "/home/FilipS/2026/landscape_mdf/data/source/hq_sample_mdf.csv",
+        index=False,
+        header=False,
+    )
     return
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
@@ -115,11 +116,15 @@ def propagate_go_annotations(
     obsolete_prefer: str = "replaced_by",  # "replaced_by" | "consider"
     score_min: Optional[float] = None,     # NEW: filter before propagation
     round_decimals: int = 3,               # NEW: rounding
+    filter_predictable_terms: bool = False,  # If True, only include GO terms from predictable_terms_path (filters BEFORE propagation)
+    predictable_terms_path: Optional[str] = None,  # Path to CSV file with predictable GO terms (default: /home/FilipS/2025/metagenomic_deepfri/data/external/deepfri_predictable_terms.csv)
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Returns (propagated_df, stats_df).
 
     - Filters input annotations by score_min (if provided) BEFORE propagation.
+    - Filters input annotations to only predictable terms (if filter_predictable_terms=True) BEFORE propagation.
+      This completely removes terms not in the predictable set (they are not propagated).
     - Rounds Score/IC in propagated_df and percent in stats_df to round_decimals.
     - If score_col is None or not present in df, skips score filtering and score inheritance.
 
@@ -245,7 +250,34 @@ def propagate_go_annotations(
         n_after = int(sub.shape[0])
         n_rows_dropped_score = n_before - n_after
 
-    sub[term_col] = sub[term_col].astype(str)
+    # Filter to predictable terms if requested (BEFORE propagation)
+    n_rows_dropped_predictable = 0
+    if filter_predictable_terms:
+        # Determine path to predictable terms CSV
+        if predictable_terms_path is None:
+            predictable_terms_path = "/home/FilipS/2025/metagenomic_deepfri/data/external/deepfri_predictable_terms.csv"
+        predictable_terms_path = Path(predictable_terms_path)
+        
+        if not predictable_terms_path.exists():
+            raise FileNotFoundError(f"Predictable terms file not found: {predictable_terms_path}")
+        
+        # Load predictable terms
+        predictable_df = pd.read_csv(predictable_terms_path)
+        if "go_term" not in predictable_df.columns:
+            raise ValueError(f"CSV file must have a 'go_term' column. Found columns: {list(predictable_df.columns)}")
+        
+        # Get set of predictable GO terms (normalize to strings)
+        predictable_terms = set(predictable_df["go_term"].astype(str).str.strip())
+        
+        # Filter dataframe to only include predictable terms (completely remove others)
+        n_before = int(sub.shape[0])
+        sub[term_col] = sub[term_col].astype(str)
+        sub = sub[sub[term_col].isin(predictable_terms)]
+        n_after = int(sub.shape[0])
+        n_rows_dropped_predictable = n_before - n_after
+    else:
+        sub[term_col] = sub[term_col].astype(str)
+    
     input_unique_terms = int(sub[term_col].nunique())
 
     # Filter GO-like terms and compute stats in a single pass
@@ -441,8 +473,20 @@ def propagate_go_annotations(
     if score_min is not None:
         stats.extend([
             ("input_rows_dropped_by_score", n_rows_dropped_score, pct(n_rows_dropped_score, n_rows_nonnull)),
-            ("input_rows_after_score_filter", int(sub.shape[0]), pct(int(sub.shape[0]), n_rows_nonnull)),
         ])
+    
+    # Calculate rows after score filter for predictable filter denominator
+    rows_after_score = n_rows_nonnull - n_rows_dropped_score if score_min is not None else n_rows_nonnull
+    
+    if filter_predictable_terms:
+        stats.extend([
+            ("input_rows_dropped_by_predictable_filter", n_rows_dropped_predictable, pct(n_rows_dropped_predictable, rows_after_score)),
+            ("input_rows_after_predictable_filter", int(sub.shape[0]), pct(int(sub.shape[0]), rows_after_score)),
+        ])
+    elif score_min is not None:
+        stats.append(
+            ("input_rows_after_score_filter", int(sub.shape[0]), pct(int(sub.shape[0]), n_rows_nonnull))
+        )
 
     stats.extend([
         ("input_unique_terms_raw_after_filters", input_unique_terms, 100.0),

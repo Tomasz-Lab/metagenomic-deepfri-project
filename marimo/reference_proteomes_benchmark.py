@@ -12,21 +12,29 @@ def _():
     import matplotlib.style
     from upsetplot import from_contents, plot
     import importlib
+    import os
     import pandas as pd
     from goatools.obo_parser import GODag
     from pathlib import Path
     from scipy.stats import mannwhitneyu
+
+    PLOT_DIR = "plots"
+    RAW_DIR = os.path.join(PLOT_DIR, "raw_data")
+    os.makedirs(RAW_DIR, exist_ok=True)
 
     # save and display plots in whitemode
     matplotlib.style.use("default")
     return (
         GODag,
         Path,
+        PLOT_DIR,
+        RAW_DIR,
         from_contents,
         importlib,
         mannwhitneyu,
         mo,
         np,
+        os,
         pd,
         plot,
         plt,
@@ -209,7 +217,7 @@ def _(mo):
 
 
 @app.cell
-def _(cov_100, cov_50, cov_90, plt):
+def _(PLOT_DIR, RAW_DIR, cov_100, cov_50, cov_90, pd, plt):
     def decompose_cov_percent(cov):
         total = cov["total_queries"]
 
@@ -259,6 +267,10 @@ def _(cov_100, cov_50, cov_90, plt):
     )
 
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/composition_plot.svg", bbox_inches="tight")
+    pd.DataFrame([cov_50, cov_90, cov_100], index=["id50", "id90", "id100"]).to_csv(
+        f"{RAW_DIR}/composition_plot.csv"
+    )
     plt.show()
     return
 
@@ -327,7 +339,7 @@ def _(mo):
 
 
 @app.cell
-def _(go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
+def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
     # define sources once: (key used in uniques/core, label on plot, dataframe)
     _sources = [
         ("go_terms50", "go_terms50", go_terms_50),
@@ -392,6 +404,7 @@ def _(go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
         y=1.03,
     )
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/refinement_or_noise_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -405,7 +418,7 @@ def _(mo):
 
 
 @app.cell
-def _(go_terms_100, go_terms_50, go_terms_90, plt):
+def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
     def counts_per_protein_aspect(df):
         """
         Returns a Series indexed by (Protein, aspect)
@@ -464,6 +477,7 @@ def _(go_terms_100, go_terms_50, go_terms_90, plt):
         "Annotation number per protein by identity cutoff and GO aspect", y=1.03
     )
     plt.tight_layout()
+    fig.savefig(f"{PLOT_DIR}/annotations_per_protein_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -477,7 +491,7 @@ def _(mo):
 
 
 @app.cell
-def _(go_terms_100, mannwhitneyu, np, plt):
+def _(PLOT_DIR, go_terms_100, mannwhitneyu, np, plt):
     _score_cutoff = 0.2
     _bin_width = 3
     _min_n_for_test = 20
@@ -603,6 +617,7 @@ def _(go_terms_100, mannwhitneyu, np, plt):
         y=1.01,
     )
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/predictions_vs_max_ic.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -616,7 +631,7 @@ def _(mo):
 
 
 @app.cell
-def _(go_terms_100, go_terms_50, go_terms_90, plt):
+def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
     def ic_by_aspect(df, aspect):
         """
         Return a 1D Series of IC values for a given aspect
@@ -671,6 +686,7 @@ def _(go_terms_100, go_terms_50, go_terms_90, plt):
         y=1.03,
     )
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/median_ic_per_protein_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -684,7 +700,7 @@ def _(mo):
 
 
 @app.cell
-def _(go_terms_100, go_terms_50, go_terms_90, plt):
+def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
     def score_by_aspect(df, aspect):
         return (
             df.groupby(["Protein", "aspect"])["Score"]
@@ -738,6 +754,7 @@ def _(go_terms_100, go_terms_50, go_terms_90, plt):
 
     _fig.suptitle("Per protein score", y=1.03)
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/median_score_per_protein_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -751,7 +768,7 @@ def _(mo):
 
 
 @app.cell
-def _(go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
+def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
     _sources = [
         ("go_terms_50", go_terms_50),
         ("go_terms_90", go_terms_90),
@@ -795,6 +812,7 @@ def _(go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
         y=1.03,
     )
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/cohesion_analysis.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -870,11 +888,17 @@ def _(mo):
 
 
 @app.cell
-def _(dFstruct, go_terms_100, ic_df, prop):
-    pyopal_100_propped = prop.propagate_go_annotations(
-        go_terms_100,
+def _(mdF100):
+    mdF100
+    return
+
+
+@app.cell
+def _(dFstruct, ic_df, mdF100, prop):
+    mdF100_propped = prop.propagate_go_annotations(
+        mdF100,
         protein_col="Protein",
-        term_col="go_term",
+        term_col="GO_term/EC",
         score_col="Score",
         obo_path="data/external/go-basic-latest.obo",
         ic_df=ic_df,
@@ -882,8 +906,10 @@ def _(dFstruct, go_terms_100, ic_df, prop):
         exclude_roots=True,
         obsolete_mode="drop",  # or "map"
         obsolete_prefer="replaced_by",
-        score_min=0.1,  # drop low-score annotations first
+        score_min=0.3,  # drop low-score annotations first
         round_decimals=3,  # round Score/IC/percent
+        filter_predictable_terms=True,  # Enable filtering to only include dF predictable terms
+        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
     )
 
     dFstruct_propped = prop.propagate_go_annotations(
@@ -897,18 +923,12 @@ def _(dFstruct, go_terms_100, ic_df, prop):
         exclude_roots=True,
         obsolete_mode="drop",  # or "map"
         obsolete_prefer="replaced_by",
-        score_min=0.1,  # drop low-score annotations first
+        score_min=0.3,  # drop low-score annotations first
         round_decimals=3,  # round Score/IC/percent
+        filter_predictable_terms=True,  # Enable filtering to only include dF predictable terms
+        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
     )
-    return dFstruct_propped, pyopal_100_propped
-
-
-@app.cell
-def _(dFstruct_propped):
-    dFstruct_propped[0].query(
-        "Protein == 'AF-A0A0H4IRJ4-F1-model_v6' & Aspect =='cc'"
-    )
-    return
+    return dFstruct_propped, mdF100_propped
 
 
 @app.cell
@@ -920,15 +940,15 @@ def _(mo):
 
 
 @app.cell
-def _(dFstruct_propped):
-    dFstruct_propped
+def _(mdF100_propped):
+    mdF100_propped
     return
 
 
 @app.cell
-def _(dFstruct_propped, gplot, plt, pyopal_100_propped):
-    per_prot, per_bin = gplot.concordance_by_ic(
-        pyopal_100_propped[0],
+def _(PLOT_DIR, dFstruct_propped, gplot, mdF100_propped, plt):
+    per_prot, per_bin, stats = gplot.concordance_by_ic(
+        mdF100_propped[0],
         dFstruct_propped[0],
         protein_col="Protein",
         term_col="GO_term",
@@ -937,17 +957,28 @@ def _(dFstruct_propped, gplot, plt, pyopal_100_propped):
         score_col="Score",
         score_min=0.3,  # or e.g. 0.2
         ic_min=1.0,
-        ic_max=14.0,  # bins 1..13
+        ic_max=9,  # bins 1..13
         bin_width=1.0,
         drop_propagated=None,  # True for originals, False for propagated only and None for both
         require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
+        by_aspect=True,
+        filter_predictable_terms=False,  # Filtering of predictable terms (REMOVES ALSO PROPAGATED TERMS)
+        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
     )
 
     _fig = gplot.plot_concordance_boxplot(
         per_prot,
         per_bin,
-        title="Method concordance by IC bin",
+        # title="mdF concordance with EggNOG",
     )
+
+    gplot.save_concordance_artifacts(
+        _fig,
+        per_prot,
+        out_prefix="refprot_mdf_dfstr_concordance_by_ic",
+        out_dir=PLOT_DIR,
+    )
+
     plt.show()
     return per_bin, per_prot
 
@@ -961,12 +992,13 @@ def _(mo):
 
 
 @app.cell
-def _(gplot, per_bin, per_prot, plt):
+def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     _fig = gplot.plot_concordance_violin(
         per_prot,
         per_bin,
         title="Method concordance by IC bin",
     )
+    _fig.savefig(f"{PLOT_DIR}/refprot_concordance_violin.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -974,22 +1006,6 @@ def _(gplot, per_bin, per_prot, plt):
 @app.cell
 def _(per_prot):
     per_prot
-    return
-
-
-@app.cell
-def _(pyopal_100_propped):
-    pyopal_100_propped[0].query(
-        "Protein == 'AF-P0AD86-F1-model_v6' & IC > 8.99 & IC < 10"
-    )
-    return
-
-
-@app.cell
-def _(dFstruct_propped):
-    dFstruct_propped[0].query(
-        "Protein == 'AF-P0AD86-F1-model_v6' & IC > 8.99 & IC < 10"
-    )
     return
 
 
@@ -1002,15 +1018,28 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, dFstruct, mdF100, mdF90, pd, plt):
+def _(dFseq):
+    dFseq
+    return
+
+
+@app.cell
+def _(PLOT_DIR, RAW_DIR, dFseq, dFstruct, mdF100, mdF90, pd, plt):
     _n_queries = 14895
+
+
+    # filter on quality
+    _dFseq_hq = dFseq[dFseq["Score"] >= 0.2]
+    _dFstruct_hq = dFstruct[dFstruct["Score"] >= 0.3]
+    _mdF90_hq = mdF90[mdF90["Score"] >= 0.3]
+    _mdF100_hq = mdF100[mdF100["Score"] >= 0.3]
 
     # calculate prediction coverage
     _groups = {
-        "dF_seq": len(dFseq["Protein"].unique()) / _n_queries * 100,
-        "dF_struct": len(dFstruct["Protein"].unique()) / _n_queries * 100,
-        "mdF_90": len(mdF90["Protein"].unique()) / _n_queries * 100,
-        "mdF_100": len(mdF100["Protein"].unique()) / _n_queries * 100,
+        "dF_seq": len(_dFseq_hq["Protein"].unique()) / _n_queries * 100,
+        "dF_struct": len(_dFstruct_hq["Protein"].unique()) / _n_queries * 100,
+        "mdF_90": len(_mdF90_hq["Protein"].unique()) / _n_queries * 100,
+        "mdF_100": len(_mdF100_hq["Protein"].unique()) / _n_queries * 100,
     }
 
     _groups_df = pd.DataFrame.from_dict(
@@ -1037,6 +1066,8 @@ def _(dFseq, dFstruct, mdF100, mdF90, pd, plt):
     plt.ylabel("% of proteins with at least one GO term predicted")
     plt.title("Prediction coverage")
     plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/prediction_coverage.svg", bbox_inches="tight")
+    _groups_df.to_csv(f"{RAW_DIR}/prediction_coverage.csv")
     plt.show()
     return
 
@@ -1090,21 +1121,24 @@ def _(plt):
         offset: float = 0.15,
         overlap_color: str = "#e5f6ff",
         overlap_alpha: float = 0.85,
+        save_path: str | None = None,  # optional save path
     ):
         a_only = len(set_a - set_b)
         b_only = len(set_b - set_a)
         both = len(set_a & set_b)
         total = a_only + b_only + both
 
-        plt.figure(figsize=(6, 6))
+        # Create figure explicitly
+        _fig, _ax = plt.subplots(figsize=(6, 6))
+
         v = venn2(
             subsets=(a_only, b_only, both),
             set_labels=(label_a, label_b),
             set_colors=colors,
             alpha=alpha,
+            ax=_ax,
         )
 
-        # format labels as count + percentage
         def _fmt(n: int) -> str:
             return f"{n}\n({100 * n / total:.1f}%)" if total > 0 else "0\n(0.0%)"
 
@@ -1114,7 +1148,6 @@ def _(plt):
                 lbl.set_text(_fmt(value))
                 lbl.set_fontsize(16)
 
-        # push non-overlap labels outward
         for region, direction in [("10", -1), ("01", 1)]:
             lbl = v.get_label_by_id(region)
             if lbl:
@@ -1122,13 +1155,11 @@ def _(plt):
                 lbl.set_position((x + direction * offset, y))
                 lbl.set_ha("right" if direction < 0 else "left")
 
-        # set overlap region color explicitly
         overlap = v.get_patch_by_id("11")
         if overlap:
             overlap.set_color(overlap_color)
             overlap.set_alpha(overlap_alpha)
 
-        # outline styling
         for patch in v.patches:
             if patch:
                 patch.set_edgecolor("black")
@@ -1139,27 +1170,65 @@ def _(plt):
                 label.set_fontsize(16)
                 label.set_fontweight("bold")
 
-        plt.title("Annotation overlap for MF", fontsize=16)
-        plt.tight_layout()
+        _fig.tight_layout()
+
+        # --- Save if requested ---
+        if save_path:
+            _fig.savefig(f"{save_path}.svg", bbox_inches="tight")
+            _fig.savefig(f"{save_path}.pdf", bbox_inches="tight", dpi=300)
+
         plt.show()
     return (venn_with_percentages,)
 
 
 @app.cell
-def _(dFstruct, mdF100, venn_with_percentages):
-    _mdf_hq = mdF100.query("Score >= 0.3 & Aspect == 'mf'")
-    _dfs_hq = dFstruct.query("Score >= 0.3 & Aspect == 'mf'")
+def _():
+    return
 
-    set_a = set(zip(_mdf_hq["Protein"], _mdf_hq["GO_term/EC"]))
-    set_b = set(zip(_dfs_hq["Protein"], _dfs_hq["GO_term/EC"]))
 
-    venn_with_percentages(
-        set_a,
-        set_b,
-        label_a="meta-deepFRI       ",
-        label_b="       struct-deepFRI",
-        offset=0.02,
-    )
+@app.cell
+def _(PLOT_DIR, RAW_DIR, dFstruct, mdF100, mdF50, mdF90, pd, venn_with_percentages):
+    mdf_variants = {
+        "50": mdF50,
+        "90": mdF90,
+        "100": mdF100,
+    }
+
+    for suffix, mdf_df in mdf_variants.items():
+        _mdf_hq = mdf_df.query("Score >= 0.3 & Aspect == 'mf'")
+        _dfs_hq = dFstruct.query("Score >= 0.3 & Aspect == 'mf'")
+
+        set_a = set(zip(_mdf_hq["Protein"], _mdf_hq["GO_term/EC"]))
+        set_b = set(zip(_dfs_hq["Protein"], _dfs_hq["GO_term/EC"]))
+
+        ### RAW DATA SAVING ###
+        all_pairs = sorted(set_a | set_b)
+        membership_df = pd.DataFrame(all_pairs, columns=["Protein", "GO_term/EC"])
+        membership_df["pair"] = list(
+            zip(membership_df["Protein"], membership_df["GO_term/EC"])
+        )
+        membership_df["in_mdf"] = membership_df["pair"].isin(set_a)
+        membership_df["in_dfstruct"] = membership_df["pair"].isin(set_b)
+        membership_df = membership_df.drop(columns="pair")
+        membership_df.to_csv(
+            f"{RAW_DIR}/venn_diagram_mdf{suffix}_dfstruct.csv",
+            index=False,
+        )
+
+        venn_with_percentages(
+            set_a,
+            set_b,
+            label_a=f"Metagenomic-deepFRI",
+            label_b="       deepFRI-structure",
+            offset=0.05,
+            save_path=f"{PLOT_DIR}/venn_diagram_mdf{suffix}_dfstruct",
+        )
+    return (membership_df,)
+
+
+@app.cell
+def _(membership_df):
+    membership_df
     return
 
 
@@ -1205,7 +1274,7 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
+def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
     # define sources once: (key used in uniques/core, label on plot, dataframe)
     _sources = [
         ("seq", "dFseq", dFseq),
@@ -1271,6 +1340,7 @@ def _(dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
         y=1.03,
     )
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/refinement_or_noise_methods.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -1284,7 +1354,7 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, dFstruct, mdF100, mdF90, plt):
+def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, np, plt):
     def _get_aspect_counts(counts_series, aspect):
         aspect_lower = str(aspect).lower()
         aspect_index = (
@@ -1293,59 +1363,95 @@ def _(dFseq, dFstruct, mdF100, mdF90, plt):
         return counts_series[aspect_index == aspect_lower].values
 
 
+    _mdf100_hq = mdF100.query("Score >= 0.3")
+    _mdf90_hq = mdF90.query("Score >= 0.3")
+    _dfstr_hq = dFstruct.query("Score >= 0.3")
+    _dfseq_hq = dFseq.query("Score >= 0.2")
+
     # 1) Counts per (Protein, Aspect)
-    counts_dFseq = dFseq.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
-    counts_dFstruct = dFstruct.groupby(["Protein", "Aspect"])[
+    counts_dFseq = _dfseq_hq.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
+    counts_dFstruct = _dfstr_hq.groupby(["Protein", "Aspect"])[
         "GO_term/EC"
     ].nunique()
-    counts_mdF90 = mdF90.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
-    counts_mdF100 = mdF100.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
+    counts_mdF90 = _mdf90_hq.groupby(["Protein", "Aspect"])["GO_term/EC"].nunique()
+    counts_mdF100 = _mdf100_hq.groupby(["Protein", "Aspect"])[
+        "GO_term/EC"
+    ].nunique()
 
     # 2) Plotting config
     titles = {"bp": "BP", "mf": "MF", "cc": "CC"}
     y_limits = {"bp": 100, "mf": 30, "cc": 20}
     sources = [
-        ("seq", counts_dFseq),
-        ("struct", counts_dFstruct),
-        ("90", counts_mdF90),
-        ("100", counts_mdF100),
+        ("dFseq", counts_dFseq),
+        ("dFstruct", counts_dFstruct),
+        ("mdF90", counts_mdF90),
+        ("mdF100", counts_mdF100),
     ]
 
     # 3) Plot
     _fig, _axes = plt.subplots(1, 3, figsize=(14, 4), sharey=False)
+    _rng = np.random.default_rng(42)
 
-    for ax, asp in zip(_axes, ["bp", "mf", "cc"]):
-        # extract per-source counts for this aspect
-        data = [_get_aspect_counts(series, asp) for _, series in sources]
+
+    def _jitter(vals, xpos, max_points=8000):
+        vals = np.asarray(vals)
+        if vals.size > max_points:
+            vals = _rng.choice(vals, max_points, replace=False)
+        x = xpos + _rng.normal(0, 0.04, size=vals.size)
+        return x, vals
+
+
+    for _ax, _asp in zip(_axes, ["bp", "mf", "cc"]):
+        _data = [_get_aspect_counts(series, _asp) for _, series in sources]
         _labels = [label for label, _ in sources]
 
-        # draw boxplot and capture artists
-        _bp = ax.boxplot(data, tick_labels=_labels, sym=".")
+        for _i, _d in enumerate(_data, start=1):
+            _xj, _yj = _jitter(np.asarray(_d), _i)
+            _ax.scatter(_xj, _yj, s=8, alpha=0.15, zorder=1, linewidths=0)
 
-        # annotate medians
+        _bp = _ax.boxplot(
+            _data,
+            tick_labels=_labels,
+            showmeans=True,
+            meanline=True,
+            showfliers=False,
+            widths=0.55,
+            patch_artist=True,
+            zorder=2,
+            boxprops=dict(linewidth=1.6),
+            whiskerprops=dict(linewidth=1.4),
+            capprops=dict(linewidth=1.4),
+            medianprops=dict(linewidth=2.2),
+            meanprops=dict(linewidth=2.0),
+        )
+        for _box in _bp["boxes"]:
+            _box.set_alpha(0.25)
+
         for _i, _median_line in enumerate(_bp["medians"], start=1):
-            _x, _y = _median_line.get_xdata(), _median_line.get_ydata()
-            _median_val = _y.mean()  # median value
-            ax.text(
+            _median_val = _median_line.get_ydata().mean()
+            _ax.text(
                 _i,
                 _median_val,
                 f"{_median_val:.0f}",
                 ha="center",
                 va="bottom",
-                fontsize=9,
+                fontsize=13,
+                zorder=3,
             )
 
-        ax.set_title(titles[asp])
-        ax.set_ylim(0, y_limits[asp])
+        _ax.set_title(titles[_asp], fontsize=11)
+        _ax.set_ylim(0, y_limits[_asp])
+        _ax.spines[["top", "right"]].set_visible(False)
+        _ax.tick_params(axis="x", length=0)
+        _ax.grid(axis="y", linestyle=":", linewidth=0.8, alpha=0.25, zorder=0)
 
-        if asp == "bp":
-            ax.set_ylabel("Per protein median number of go-terms")
+        if _asp == "bp":
+            _ax.set_ylabel("Number of GO terms")
 
-    _fig.suptitle(
-        "Median annotation number per protein by source and GO aspect", y=1.03
-    )
+    _fig.suptitle("Annotation number per protein by source and GO aspect", y=1.03)
     plt.tight_layout()
-    plt.show()
+    _fig.savefig(f"{PLOT_DIR}/annotations_per_protein_methods.svg", bbox_inches="tight")
+    _fig
     return
 
 
@@ -1358,7 +1464,7 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, dFstruct, mdF100, mdF50, mdF90, plt):
+def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF50, mdF90, plt):
     ic_dFseq = dFseq.groupby(["Protein", "Aspect"])["IC"].max()
     ic_dFstruct = dFstruct.groupby(["Protein", "Aspect"])["IC"].max()
     ic_mdF50 = mdF50.groupby(["Protein", "Aspect"])["IC"].max()
@@ -1438,6 +1544,7 @@ def _(dFseq, dFstruct, mdF100, mdF50, mdF90, plt):
         y=1.03,
     )
     plt.tight_layout()
+    _fig.savefig(f"{PLOT_DIR}/max_ic_per_protein.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -1451,75 +1558,107 @@ def _(mo):
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""
-    Statistics are a bit weird here. We have two options really:
-    1. **Mann-Whitney U test**, that work on unpaired data, checking if randomly picked samples differ aka the H0 being both sets are generated based on the same distribution.
-    2. **Wilcoxon signed-rank test**, that work on paired data, checking if the same samples differ between methods.
-    """)
+def _(mdF100):
+    _mdf100_hq = mdF100.query("Score >= 0.3")
+    _mdf100_hq.groupby(["Protein", "Aspect"])["Score"].median()
     return
 
 
 @app.cell
-def _():
-    return
+def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, np, plt):
+    def _get_aspect_counts(counts_series, aspect):
+        aspect_lower = str(aspect).lower()
+        aspect_index = (
+            counts_series.index.get_level_values("Aspect").astype(str).str.lower()
+        )
+        return counts_series[aspect_index == aspect_lower].values
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## Cohesion analysis
-    """)
-    return
+    # no score filtering
+    _mdf100_hq = mdF100.query("Score >= 0.0")
+    _mdf90_hq = mdF90.query("Score >= 0.0")
+    _dfstr_hq = dFstruct.query("Score >= 0.0")
+    _dfseq_hq = dFseq.query("Score >= 0.0")
 
+    # 1) Counts per (Protein, Aspect)
+    _scores_dFseq = _dfseq_hq.groupby(["Protein", "Aspect"])["Score"].median()
+    _scores_dFstruct = _dfstr_hq.groupby(["Protein", "Aspect"])["Score"].median()
+    _scores_mdF90 = _mdf90_hq.groupby(["Protein", "Aspect"])["Score"].median()
+    _scores_mdF100 = _mdf100_hq.groupby(["Protein", "Aspect"])["Score"].median()
 
-@app.cell
-def _(dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
+    # 2) Plotting config
+    _titles = {"bp": "BP", "mf": "MF", "cc": "CC"}
     _sources = [
-        ("seq", dFseq),
-        ("struct", dFstruct),
-        ("90", mdF90),
-        ("100", mdF100),
+        ("dFseq", _scores_dFseq),
+        ("dFstruct", _scores_dFstruct),
+        ("mdF90", _scores_mdF90),
+        ("mdF100", _scores_mdF100),
     ]
 
-    _aspects = [
-        ("bp", "BP"),
-        ("mf", "MF"),
-        ("cc", "CC"),
-    ]
+    # 3) Plot
+    _fig, _axes = plt.subplots(1, 3, figsize=(14, 4), sharey=False)
+    _rng = np.random.default_rng(42)
 
-    # compute cohesion per aspect and source
-    _coh = {}  # _coh[asp_code][label] = Series
 
-    for _asp_code, _asp_title in _aspects:
-        _coh[_asp_code] = {}
-        for _label, _df in _sources:
-            _coh[_asp_code][_label] = wsh.per_protein_cohesion(
-                _df, _asp_code, wang, go_col="GO_term/EC"
+    def _jitter(vals, xpos, max_points=8000):
+        vals = np.asarray(vals)
+        if vals.size > max_points:
+            vals = _rng.choice(vals, max_points, replace=False)
+        x = xpos + _rng.normal(0, 0.04, size=vals.size)
+        return x, vals
+
+
+    for _ax, _asp in zip(_axes, ["bp", "mf", "cc"]):
+        _data = [_get_aspect_counts(series, _asp) for _, series in _sources]
+        _labels = [label for label, _ in _sources]
+
+        for _i, _d in enumerate(_data, start=1):
+            _xj, _yj = _jitter(np.asarray(_d), _i)
+            _ax.scatter(_xj, _yj, s=8, alpha=0.15, zorder=1, linewidths=0)
+
+        _bp = _ax.boxplot(
+            _data,
+            tick_labels=_labels,
+            showmeans=True,
+            meanline=True,
+            showfliers=False,
+            widths=0.55,
+            patch_artist=True,
+            zorder=2,
+            boxprops=dict(linewidth=1.6),
+            whiskerprops=dict(linewidth=1.4),
+            capprops=dict(linewidth=1.4),
+            medianprops=dict(linewidth=2.2),
+            meanprops=dict(linewidth=2.0),
+        )
+        for _box in _bp["boxes"]:
+            _box.set_alpha(0.25)
+
+        for _i, _median_line in enumerate(_bp["medians"], start=1):
+            _median_val = _median_line.get_ydata().mean()
+            _ax.text(
+                _i,
+                _median_val,
+                f"{_median_val:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=13,
+                zorder=3,
             )
 
-    # shared figure with 3 subplots
-    _fig, _axes = plt.subplots(1, 3, figsize=(14, 4), sharey=True)
+        _ax.set_title(_titles[_asp], fontsize=11)
+        _ax.set_ylim(0, 1)
+        _ax.spines[["top", "right"]].set_visible(False)
+        _ax.tick_params(axis="x", length=0)
+        _ax.grid(axis="y", linestyle=":", linewidth=0.8, alpha=0.25, zorder=0)
 
-    for _ax, (_asp_code, _asp_title) in zip(_axes, _aspects):
-        _ylabel = (
-            "Semantic cohesion (mean Wang similarity)"
-            if _asp_code == "bp"
-            else None
-        )
-        wsh.boxplot_cohesion(
-            _ax,
-            _coh[_asp_code],
-            _title=_asp_title,
-            _ylabel=_ylabel,
-        )
+        if _asp == "bp":
+            _ax.set_ylabel("Median score")
 
-    _fig.suptitle(
-        "Per-protein GO-term cohesion across sources and GO aspects",
-        y=1.03,
-    )
+    _fig.suptitle("Median score per protein by source and GO aspect", y=1.03)
     plt.tight_layout()
-    plt.show()
+    _fig.savefig(f"{PLOT_DIR}/median_score_per_protein_methods.svg", bbox_inches="tight")
+    _fig
     return
 
 

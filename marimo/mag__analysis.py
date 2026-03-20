@@ -20,9 +20,15 @@ def _():
 
     # save and display plots in whitemode
     matplotlib.style.use("default")
+
+    PLOT_DIR = "plots"
+    RAW_DIR = "plots/raw_data"
+    os.makedirs(RAW_DIR, exist_ok=True)
     return (
         GODag,
+        PLOT_DIR,
         Path,
+        RAW_DIR,
         from_contents,
         importlib,
         mannwhitneyu,
@@ -120,6 +126,12 @@ def _(pd):
 
 @app.cell
 def _(selected_genomes):
+    selected_genomes
+    return
+
+
+@app.cell
+def _(selected_genomes):
     # helper to extract phylogeny
     def extract_rank(lineage, rank):
         for field in lineage.split(";"):
@@ -162,58 +174,7 @@ def _(df, extract_rank):
     _df = df.copy()
     _df["Class"] = df["Lineage"].apply(lambda x: extract_rank(x, "c__"))
     _df["Class"].unique()
-    return
-
-
-@app.cell
-def _(df, extract_rank):
-    # previous pseudo-mags
-    _old_mags2 = df.query(
-        "Genome in ["
-        "'MGYG000000018', "
-        "'MGYG000000151', "
-        "'MGYG000001132', "
-        "'MGYG000001373', "
-        "'MGYG000001551', "
-        "'MGYG000001803', "
-        "'MGYG000002242', "
-        "'MGYG000002893', "
-        "'MGYG000003379', "
-        "'MGYG000004694'"
-        "]"
-    )
-
-    _old_mags2["Phylum"] = _old_mags2["Lineage"].apply(
-        lambda x: extract_rank(x, "p__")
-    )
-    _old_mags2["Class"] = _old_mags2["Lineage"].apply(
-        lambda x: extract_rank(x, "c__")
-    )
-    _old_mags2["Species"] = _old_mags2["Lineage"].apply(
-        lambda x: extract_rank(x, "s__")
-    )
-
-    _out = _old_mags2[
-        [
-            "Species_rep",
-            "Genome_type",
-            "Completeness",
-            "Contamination",
-            "N_contigs",
-            "Phylum",
-            "Class",
-            "Species",
-        ]
-    ]
-    _out
-
-    # Completeness > 95 & Contamination < 1 & N_contigs < 100
-    return
-
-
-@app.cell
-def _(df):
-    df.query("Genome == 'MGYG000000378'")
+    _df
     return
 
 
@@ -232,6 +193,13 @@ def _(GODag, pd):
 
     # information content from SwissProt
     ic_df = pd.read_csv("data/external/IC_swissprot.csv")
+
+    # new information content
+    """
+    ic_df = pd.read_csv("data/external/ic_swissprot_new.tsv", sep="\t")[
+        ["term", "corpus_ic"]
+    ].rename(columns={"term": "go_term", "corpus_ic": "IC"})
+    """
 
     obo = "data/external/go-basic-latest.obo"
 
@@ -314,7 +282,7 @@ def _(mo):
 def _(ic_df, pd, resolve_aspect):
     # sequence only deepFRI
     dFseq = pd.read_csv(
-        "/home/FilipS/2025/metagenomic_deepfri/data/source/uhgp_mags/sequence_only_deepfri/merged_predictions.csv"
+        "/home/FilipS/software/nextflow_deepfri/results/uhgp_50_mags/merged_predictions.csv"
     )
     dFseq = dFseq.rename(columns={"GO_term/EC": "go_term"})
 
@@ -335,23 +303,31 @@ def _(ic_df, pd, resolve_aspect):
     dFseq["aspect"] = dFseq["go_term"].map(go2aspect_dfseq)
 
 
-    # EGGnog go-terms
+    # EGGnog go-terms from MGY
     eggnog = pd.read_csv(
-        "/home/FilipS/2025/metagenomic_deepfri/data/source/uhgp_mags/all_eggNOG.tsv",
+        "/home/FilipS/2025/metagenomic_deepfri/data/source/uhgp_mags/uhgp_50_mags/merged.tsv",
         sep="\t",
-    )
-    eggnog = eggnog.rename(columns={"#query": "Protein", "GOs": "go_term"})[
-        ["Protein", "go_term"]
-    ]
+    ).rename(columns={"#query": "Protein", "GOs": "go_term"})
 
-    eggnog = (
-        eggnog.assign(go_term=eggnog["go_term"].str.split(","))
+    """
+    # EGGnog self-calculated with ultra-sensitive diamond
+    eggnog = pd.read_csv(
+        "/home/FilipS/2025/metagenomic_deepfri/data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.emapper.annotations",
+        sep="\t",
+        skiprows=4,
+    ).rename(columns={"#query": "Protein", "GOs": "go_term"})
+    """
+
+    eggnog_go = eggnog[["Protein", "go_term"]]
+
+    eggnog_go = (
+        eggnog_go.assign(go_term=eggnog_go["go_term"].str.split(","))
         .explode("go_term")
         .reset_index(drop=True)
     )
 
-    eggnog = pd.merge(
-        eggnog,
+    eggnog_go = pd.merge(
+        eggnog_go,
         ic_df,
         left_on="go_term",
         right_on="go_term",
@@ -360,16 +336,16 @@ def _(ic_df, pd, resolve_aspect):
 
     ### add missing aspect for eggnog ###
     _valid_terms_egg = (
-        eggnog["go_term"].dropna().loc[lambda s: s.ne("-")].astype(str).unique()
+        eggnog_go["go_term"].dropna().loc[lambda s: s.ne("-")].astype(str).unique()
     )
 
     go2aspect_egg = {t: resolve_aspect(t) for t in _valid_terms_egg}
-    eggnog["aspect"] = eggnog["go_term"].map(go2aspect_egg)
+    eggnog_go["aspect"] = eggnog_go["go_term"].map(go2aspect_egg)
 
     # load deepgo predictions
 
     deep_go = pd.read_csv(
-        "data/source/uhgp_mags/deep_go/uhgp_10_mags_all_aspects.tsv",
+        "data/source/uhgp_mags/uhgp_50_mags/deep_go_meta/uhgp_50_mags_preds_merged.tsv",
         sep="\t",
     )
 
@@ -379,8 +355,8 @@ def _(ic_df, pd, resolve_aspect):
         left_on="go_term",
         right_on="go_term",
         how="left",
-    ).rename(columns={"Aspect": "aspect"})
-    return dFseq, deep_go, eggnog
+    )
+    return dFseq, deep_go, eggnog, eggnog_go
 
 
 @app.cell
@@ -403,7 +379,7 @@ def _(deep_go):
 @app.cell
 def _():
     # calculate how many sequences we have
-    _original_fasta = "data/source/uhgp_mags/uhgp_10_mag.faa"
+    _original_fasta = "data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa"
     with open(_original_fasta) as _f:
         all_sequences = sum(1 for line in _f if line.startswith(">"))
     return (all_sequences,)
@@ -420,7 +396,7 @@ def _(mo):
 @app.cell
 def _(Path, ic_df, pd):
     _BASE = Path(
-        "/home/FilipS/2025/metagenomic_deepfri/data/source/uhgp_mags/uhgp_10_mags_fix"
+        "/home/FilipS/software/mdeepfri_source/Metagenomic-DeepFRI/results/uhgp_50_mags"
     )
 
     identity_bins = {
@@ -428,9 +404,9 @@ def _(Path, ic_df, pd):
     }
 
     db_files = {
-        "pdb": "pdb100_230517_alignment_scores.tsv",
-        "uniprot": "afdb_uniprot_v4_alignment_scores.tsv",
-        "esm": "highquality_clust30_alignment_scores.tsv",
+        "pdb100": "pdb100_230517_alignment_scores.tsv",
+        "afdb_v4": "afdb_uniprot_v4_alignment_scores.tsv",
+        "esm_highquality_clust30": "highquality_clust30_alignment_scores.tsv",
     }
 
     results_file = "generate_contacts_2/results.tsv"
@@ -469,6 +445,18 @@ def _(load_alignment_sets):
 
 
 @app.cell
+def _(pyopal_100):
+    pyopal_100["pdb100"].query("query_name=='MGYG000000513_01635'")
+    return
+
+
+@app.cell
+def _(mdF100):
+    mdF100.query("Identity < 0.3")
+    return
+
+
+@app.cell
 def _(all_sequences, pyopal_100):
     def compute_coverage(align_dict, total_queries):
         """align_dict = {'pdb':df, 'uniprot':df, 'esm':df}"""
@@ -476,16 +464,18 @@ def _(all_sequences, pyopal_100):
         # unique query hits for each DB
         hits = {db: set(df["query_name"]) for db, df in align_dict.items()}
 
-        cov_pdb = len(hits["pdb"])
-        cov_pdb_uniprot = len(hits["pdb"] | hits["uniprot"])
-        cov_all = len(hits["pdb"] | hits["uniprot"] | hits["esm"])
+        cov_pdb = len(hits["pdb100"])
+        cov_pdb_uniprot = len(hits["pdb100"] | hits["afdb_v4"])
+        cov_all = len(
+            hits["pdb100"] | hits["afdb_v4"] | hits["esm_highquality_clust30"]
+        )
 
         any_hit = cov_all
 
         return {
-            "pdb_only": cov_pdb,
-            "pdb_plus_uniprot": cov_pdb_uniprot,
-            "pdb_plus_uniprot_plus_esm": cov_all,
+            "pdb100_only": cov_pdb,
+            "pdb_plus_afdb": cov_pdb_uniprot,
+            "pdb_plus_afdb_plus_esm": cov_all,
             "any_hit": any_hit,
             "total_queries": total_queries,
         }
@@ -499,37 +489,49 @@ def _(all_sequences, pyopal_100):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Database composition
+    ## Structure database composition
     """)
     return
 
 
 @app.cell
-def _(all_sequences, cov_100, plt):
+def _(PLOT_DIR, RAW_DIR, all_sequences, cov_100, pd, plt):
     from matplotlib.ticker import FuncFormatter
 
 
     def decompose_cov(cov):
         total = cov["total_queries"]
-        pdb = cov["pdb_only"]
-        uni = cov["pdb_plus_uniprot"] - pdb
-        esm = cov["pdb_plus_uniprot_plus_esm"] - (pdb + uni)
+        pdb = cov["pdb100_only"]
+        uni = cov["pdb_plus_afdb"] - pdb
+        esm = cov["pdb_plus_afdb_plus_esm"] - (pdb + uni)
         no_hit = total - (pdb + uni + esm)
         return pdb, uni, esm, no_hit
 
 
     title = ""
 
-    fig, ax = plt.subplots(figsize=(5, 5))
+    _fig, ax = plt.subplots(figsize=(5, 5))
 
     pdb, uni, esm, no_hit = decompose_cov(cov_100)
 
-    labels = [""]
+    _labels = [""]
 
-    ax.bar(labels, [pdb], label="PDB hits")
-    ax.bar(labels, [uni], bottom=[pdb], label="+UniProt hits")
-    ax.bar(labels, [esm], bottom=[pdb + uni], label="+ESM hits")
-    ax.bar(labels, [no_hit], bottom=[pdb + uni + esm], label="No hit")
+    ax.bar(_labels, [pdb], label="PDB100 hits", color="#1192e8")
+    ax.bar(_labels, [uni], bottom=[pdb], label="+AFDBv4 hits", color="#ff832b")
+    ax.bar(
+        _labels,
+        [esm],
+        bottom=[pdb + uni],
+        label="+ESM_clust hits",
+        color="#198038",
+    )
+    ax.bar(
+        _labels,
+        [no_hit],
+        bottom=[pdb + uni + esm],
+        label="No hit",
+        color="#da1e28",
+    )
 
     ax.set_title(title)
     ax.set_ylabel("Fraction of queries")
@@ -555,20 +557,32 @@ def _(all_sequences, cov_100, plt):
     )
     # Legend outside
     # Figure-level title
-    fig.suptitle("Database hits distribution", fontsize=14, y=1.08)
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(
-        handles, labels, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.0)
+    _fig.suptitle("Database hits distribution", fontsize=14, y=1.08)
+    handles, _labels = ax.get_legend_handles_labels()
+    _fig.legend(
+        handles, _labels, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.0)
     )
 
 
     plt.tight_layout()
+
+    _fig.savefig(f"{PLOT_DIR}/structure_db_composition.svg", bbox_inches="tight")
+    pd.DataFrame([cov_100]).to_csv(f"{RAW_DIR}/structure_db_composition.csv", index=False)
+
     plt.show()
     return
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Identity coverage curve
+    """)
+    return
+
+
 @app.cell
-def _(np, pd, plt, pyopal_100):
+def _(PLOT_DIR, RAW_DIR, np, pd, plt, pyopal_100):
     def hit_coverage_curve(
         df: pd.DataFrame, thresholds: np.ndarray
     ) -> pd.DataFrame:
@@ -603,17 +617,35 @@ def _(np, pd, plt, pyopal_100):
     for _name, _df in pyopal_100.items():
         curves[_name] = hit_coverage_curve(_df, thresholds)
 
+    _colors = {
+        "pdb100": "#1192e8",
+        "afdb_v4": "#ff832b",
+        "esm_highquality_clust30": "#198038",
+    }
+
     plt.figure(figsize=(7, 5))
 
     for name, curve in curves.items():
-        plt.plot(curve["identity_threshold"], curve["coverage_frac"], label=name)
+        plt.plot(
+            curve["identity_threshold"],
+            curve["coverage_frac"],
+            label=name,
+            color=_colors.get(name, "gray"),
+        )
 
-    plt.gca().invert_xaxis()  # identity decreases left->right? invert so "relaxing" goes to the right
+    plt.gca().invert_xaxis()
     plt.xlabel("Identity threshold")
     plt.ylabel("Fraction of queries with a hit")
     plt.title("Relaxing identity cutoff increases coverage")
     plt.legend()
     plt.tight_layout()
+
+    _fig = plt.gcf()
+    _fig.savefig(f"{PLOT_DIR}/identity_coverage_curve.svg", bbox_inches="tight")
+    pd.concat(
+        [df.assign(db_name=name) for name, df in curves.items()], ignore_index=True
+    ).to_csv(f"{RAW_DIR}/identity_coverage_curve.csv", index=False)
+
     plt.show()
     return
 
@@ -621,13 +653,166 @@ def _(np, pd, plt, pyopal_100):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## go-term coverage
+    ## Prediction coverage
     """)
     return
 
 
 @app.cell
-def _(all_sequences, dFseq, deep_go, eggnog, mdF100, pd, plt):
+def _(eggnog):
+    eggnog.head()
+    return
+
+
+@app.cell
+def _(pd):
+    # EggNOG filtration
+    import re
+
+    EVIDENCE_COLS = [
+        "COG_category",
+        "Description",
+        "Preferred_name",
+        "GOs",
+        "EC",
+        "KEGG_ko",
+        "KEGG_Pathway",
+        "KEGG_Module",
+        "KEGG_Reaction",
+        "KEGG_rclass",
+        "BRITE",
+        "KEGG_TC",
+        "CAZy",
+        "BiGG_Reaction",
+        "PFAMs",
+    ]
+
+    PFAM_BAD_PAT = re.compile(
+        r"^(?:DUF\d*|unknown|uncharacteri[sz]ed|hypothetical)$", re.IGNORECASE
+    )
+
+    # Description strings that should NOT count as meaningful evidence (tune as needed)
+    DESC_BAD_PAT = re.compile(
+        r"(?:^|\b)(protein of unknown function|hypothetical protein|uncharacteri[sz]ed protein|"
+        r"domain of unknown function|unknown function)(?:\b|$)",
+        re.IGNORECASE,
+    )
+
+
+    def filter_meaningful_eggnog_rows(df: pd.DataFrame) -> pd.DataFrame:
+        _df = df.copy()
+        _cols = [c for c in EVIDENCE_COLS if c in _df.columns]
+        if not _cols:
+            return _df.iloc[0:0].copy()
+
+        def _present(s: pd.Series) -> pd.Series:
+            s = s.astype("string")
+            return ~(s.isna() | (s.str.strip().isin(["", "-"])))
+
+        def _not_bad_desc(s: pd.Series) -> pd.Series:
+            s = s.astype("string").fillna("").str.strip()
+            # count as meaningful only if present and NOT matching bad patterns
+            return ~s.isin(["", "-"]) & ~s.str.contains(DESC_BAD_PAT)
+
+        # Base: any evidence present anywhere
+        _any_evidence = pd.concat([_present(_df[c]) for c in _cols], axis=1).any(
+            axis=1
+        )
+
+        # COG status
+        if "COG_category" in _df.columns:
+            _cog = _df["COG_category"].astype("string").fillna("").str.strip()
+            _cog_present = ~_cog.isin(["", "-"])
+            _cog_is_S = _cog.eq("S")
+            _cog_good = _cog_present & ~_cog_is_S
+        else:
+            _cog_present = pd.Series(False, index=_df.index)
+            _cog_is_S = pd.Series(False, index=_df.index)
+            _cog_good = pd.Series(False, index=_df.index)
+
+        # PFAM status: bad only if ALL tokens are bad
+        if "PFAMs" in _df.columns:
+            _pf = _df["PFAMs"].astype("string").fillna("").str.strip()
+            _pf_present = ~_pf.isin(["", "-"])
+            _tokens = _pf.str.replace(";", ",", regex=False).str.split(",")
+            _pfam_is_bad = _tokens.apply(
+                lambda toks: (
+                    len([t for t in toks if t.strip() and t.strip() != "-"]) > 0
+                    and all(
+                        PFAM_BAD_PAT.match(t.strip())
+                        for t in toks
+                        if t.strip() and t.strip() != "-"
+                    )
+                )
+            )
+            _pfam_good = _pf_present & ~_pfam_is_bad
+        else:
+            _pf_present = pd.Series(False, index=_df.index)
+            _pfam_is_bad = pd.Series(False, index=_df.index)
+            _pfam_good = pd.Series(False, index=_df.index)
+
+        # Description: meaningful only if not boilerplate unknown-like
+        if "Description" in _df.columns:
+            _desc_present = _present(_df["Description"])
+            _desc_good = _not_bad_desc(_df["Description"])
+            _desc_bad = _desc_present & ~_desc_good
+        else:
+            _desc_present = pd.Series(False, index=_df.index)
+            _desc_good = pd.Series(False, index=_df.index)
+            _desc_bad = pd.Series(False, index=_df.index)
+
+        # "Other evidence" = all evidence columns except (COG_category, PFAMs, Description),
+        # plus "good Description" counts as other evidence.
+        _other_cols = [
+            c for c in _cols if c not in {"COG_category", "PFAMs", "Description"}
+        ]
+        _has_other = (
+            pd.concat([_present(_df[c]) for c in _other_cols], axis=1).any(axis=1)
+            if _other_cols
+            else pd.Series(False, index=_df.index)
+        )
+        _has_other_or_good_desc = _has_other | _desc_good
+
+        # Drop if nothing meaningful exists beyond:
+        # - COG=S
+        # - bad PFAM
+        # - bad Description
+        # and also no good COG / good PFAM / good Description / other columns
+        _only_bad_sources = (
+            ~_has_other_or_good_desc
+            & (
+                (_cog_present & _cog_is_S)
+                | (_pf_present & _pfam_is_bad)
+                | _desc_bad
+            )
+            & ~_cog_good
+            & ~_pfam_good
+            & ~_desc_good
+        )
+
+        _keep = _any_evidence & ~_only_bad_sources
+        return _df.loc[_keep].copy()
+
+
+    def count_meaningful_eggnog_rows(df: pd.DataFrame) -> int:
+        return int(filter_meaningful_eggnog_rows(df).shape[0])
+    return (count_meaningful_eggnog_rows,)
+
+
+@app.cell
+def _(
+    PLOT_DIR,
+    RAW_DIR,
+    all_sequences,
+    count_meaningful_eggnog_rows,
+    dFseq,
+    deep_go,
+    eggnog,
+    eggnog_go,
+    mdF100,
+    pd,
+    plt,
+):
     def proteins_with_go(df):
         """
         Count unique proteins that have at least one valid GO term.
@@ -643,10 +828,11 @@ def _(all_sequences, dFseq, deep_go, eggnog, mdF100, pd, plt):
     _deep_go_hq = deep_go.query("Score >= 0.3")
 
     _groups = {
-        "eggnog": proteins_with_go(eggnog) / all_sequences * 100,
-        "sequence-dF": proteins_with_go(_dFseq_hq) / all_sequences * 100,
-        "meta-dF": proteins_with_go(_mdf100_hq) / all_sequences * 100,
-        "deep_go": proteins_with_go(_deep_go_hq) / all_sequences * 100,
+        "EggNOG-go": proteins_with_go(eggnog_go) / all_sequences * 100,
+        "EggNOG-any": count_meaningful_eggnog_rows(eggnog) / all_sequences * 100,
+        "deepFRI-seq": proteins_with_go(_dFseq_hq) / all_sequences * 100,
+        "mdeepFRI": proteins_with_go(_mdf100_hq) / all_sequences * 100,
+        "DeepGOMeta": proteins_with_go(_deep_go_hq) / all_sequences * 100,
     }
 
     _groups_df = pd.DataFrame.from_dict(
@@ -655,35 +841,47 @@ def _(all_sequences, dFseq, deep_go, eggnog, mdF100, pd, plt):
 
     # --- customize colors here ---
     _colors = [
-        "#ff9245",  # eggnog
-        "#33b1ff",  # sequence-dF
-        "#3ddbd9",  # meta-dF
-        "#ff8389",  # deep_go
+        "#ff9245",  # EggNOG-go
+        "#ff8389",  # EggNOG-any
+        "#33b1ff",  # deepFRI-sequence
+        "#3ddbd9",  # Metagenonic-deepFRI
+        "#6fdc8c",  # deep_go
     ]
 
-    plt.figure(figsize=(5, 5))
-    bars = plt.bar(
+    _fig, _ax = plt.subplots(figsize=(6, 5))
+
+    bars = _ax.bar(
         _groups_df.index.astype(str),
         _groups_df["proteins_with_prediction"],
         color=_colors,
         edgecolor="black",
     )
 
-    # Add text labels (rounded to 2 decimals)
+    # Add text labels
     for bar in bars:
         height = bar.get_height()
-        plt.text(
+        _ax.text(
             bar.get_x() + bar.get_width() / 2,
             height,
             f"{height:.2f}",
             ha="center",
             va="bottom",
+            fontsize=10,
         )
 
-    plt.xlabel("Prediction source")
-    plt.ylabel("% proteins with ≥ 1 prediction")
-    plt.title("Prediction coverage")
-    plt.tight_layout()
+    _ax.set_xlabel("Prediction source", fontsize=14)
+    _ax.tick_params(axis="x", labelsize=14, rotation=30)
+    _ax.tick_params(axis="y", labelsize=14, rotation=0)
+
+    _ax.set_ylabel("% proteins with ≥ 1 prediction", fontsize=14)
+
+    _fig.tight_layout()
+
+    # Save
+    _fig.savefig(f"{PLOT_DIR}/prediction_coverage.svg", bbox_inches="tight")
+    _fig.savefig(f"{PLOT_DIR}/prediction_coverage.pdf", bbox_inches="tight", dpi=300)
+    _groups_df.to_csv(f"{RAW_DIR}/prediction_coverage.csv")
+
     plt.show()
     return
 
@@ -691,13 +889,13 @@ def _(all_sequences, dFseq, deep_go, eggnog, mdF100, pd, plt):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Upset plots
+    ## GO-term overlap (UpSet)
     """)
     return
 
 
 @app.cell
-def _(dFseq, eggnog, from_contents, mdF100, plot, plt):
+def _(PLOT_DIR, dFseq, eggnog_go, from_contents, mdF100, plot, plt):
     def upset_by_aspect(aspect_label, **dfs):
         contents = {}
 
@@ -729,13 +927,14 @@ def _(dFseq, eggnog, from_contents, mdF100, plot, plt):
             sort_categories_by="input",
         )
         plt.suptitle(f"Overlap of Protein–GO term annotations ({aspect_label})")
+        fig.savefig(f"{PLOT_DIR}/goterm_overlap_upset_{aspect_label}.svg", bbox_inches="tight")
         plt.show()
 
 
     for _aspect in ["bp", "mf", "cc"]:
         upset_by_aspect(
             aspect_label=_aspect,
-            eggnog=eggnog,
+            eggnog=eggnog_go,
             dFseq=dFseq,
             mdF100=mdF100,
         )
@@ -745,13 +944,13 @@ def _(dFseq, eggnog, from_contents, mdF100, plot, plt):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Median number of predictions per protein
+    ## Annotations per protein
     """)
     return
 
 
 @app.cell
-def _(dFseq, eggnog, mdF100, plt):
+def _(PLOT_DIR, RAW_DIR, dFseq, eggnog_go, mdF100, pd, plt):
     def _get_aspect_counts(counts_series, aspect):
         aspect_lower = str(aspect).lower()
         aspect_index = (
@@ -761,7 +960,7 @@ def _(dFseq, eggnog, mdF100, plt):
 
 
     # 1) Counts per (Protein, Aspect)
-    counts_eggnog = eggnog.groupby(["Protein", "aspect"])["go_term"].nunique()
+    counts_eggnog = eggnog_go.groupby(["Protein", "aspect"])["go_term"].nunique()
     counts_dFseq = dFseq.groupby(["Protein", "aspect"])["go_term"].nunique()
     counts_mdF100 = mdF100.groupby(["Protein", "aspect"])["go_term"].nunique()
 
@@ -808,6 +1007,17 @@ def _(dFseq, eggnog, mdF100, plt):
         "Median annotation number per protein by source and GO aspect", y=1.03
     )
     plt.tight_layout()
+
+    _fig.savefig(f"{PLOT_DIR}/annotations_per_protein.svg", bbox_inches="tight")
+    pd.concat(
+        [
+            counts_eggnog.reset_index().assign(method="eggnog"),
+            counts_dFseq.reset_index().assign(method="dFseq"),
+            counts_mdF100.reset_index().assign(method="mdF"),
+        ],
+        ignore_index=True,
+    ).to_csv(f"{RAW_DIR}/annotations_per_protein.csv", index=False)
+
     plt.show()
     return
 
@@ -887,7 +1097,7 @@ def _():
             fontsize=6,
             clip_on=False,
         )
-    return add_n_text_axes, add_sig_bracket_axes, p_to_stars
+    return add_sig_bracket_axes, p_to_stars
 
 
 @app.cell(hide_code=True)
@@ -900,20 +1110,21 @@ def _(mo):
 
 @app.cell
 def _(
+    PLOT_DIR,
+    RAW_DIR,
     add_sig_bracket_axes,
     dFseq,
     deep_go,
-    eggnog,
+    eggnog_go,
     mannwhitneyu,
     mdF100,
     np,
     p_to_stars,
+    pd,
     plt,
 ):
-    from scipy.stats import wilcoxon
-
     # --- max-IC-per-protein tables ---
-    ic_eggnog = eggnog.groupby(["Protein", "aspect"])["IC"].max().reset_index()
+    ic_eggnog = eggnog_go.groupby(["Protein", "aspect"])["IC"].max().reset_index()
     ic_dFseq_s20 = (
         dFseq.query("Score >= 0.2")
         .groupby(["Protein", "aspect"])["IC"]
@@ -934,43 +1145,48 @@ def _(
     )
 
     SOURCES = [
-        ("eggnog", ic_eggnog),
-        ("dF_hq", ic_dFseq_s20),
-        ("mdF_hq", ic_mdF100_s30),
-        ("deep_go", ic_deepgo_s30),
+        ("EggNOG-go", ic_eggnog),
+        ("deepFRI-seq", ic_dFseq_s20),
+        ("mdeepFRI", ic_mdF100_s30),
+        ("DeepGOMeta", ic_deepgo_s30),
     ]
+
+    METHOD_COLORS = {
+        "EggNOG-go": "#ff9245",
+        "deepFRI-seq": "#33b1ff",
+        "mdeepFRI": "#3ddbd9",
+        "DeepGOMeta": "#6fdc8c",
+    }
+
     ASPECTS = [("bp", "BP"), ("mf", "MF"), ("cc", "CC")]
-    PAIRS = [(1, 3), (2, 3), (3, 4)]
+    PAIRS = [(1, 3), (2, 3), (3, 4)]  # 1-indexed positions
+
+    labels = [name for name, _ in SOURCES]
+    colors = [METHOD_COLORS[name] for name in labels]
+
+
+    ##### SAVE RAW DATA FOR JOURNAL #####
+    _records = []
+
+    for _method_name, _df in SOURCES:
+        _tmp = _df.copy()
+        _tmp = _tmp[["Protein", "aspect", "IC"]].copy()
+        _tmp["method"] = _method_name
+        _records.append(_tmp)
+
+    source_data = pd.concat(_records, ignore_index=True)
+
+    # Standardize aspect case
+    source_data["aspect"] = source_data["aspect"].str.lower()
+
+    # Save as CSV
+    source_data.to_csv(f"{RAW_DIR}/max_ic_distribution.csv", index=False)
+    #####  #####  #####  #####  #####  #####
 
 
     def ic_series(df, aspect_code):
-        mask = df["aspect"].astype(str).str.lower().eq(str(aspect_code).lower())
-        return df.loc[mask, "IC"].dropna()
-
-
-    def proteins_in_aspect(df, aspect_code):
-        mask = df["aspect"].astype(str).str.lower().eq(str(aspect_code).lower())
-        return set(df.loc[mask, "Protein"].dropna().unique())
-
-
-    def filter_to_proteins(df, proteins, aspect_code):
-        mask = df["aspect"].astype(str).str.lower().eq(
-            str(aspect_code).lower()
-        ) & df["Protein"].isin(proteins)
-        return df.loc[mask].copy()
-
-
-    def paired_arrays(df_a, df_b, aspect_code):
-        mask_a = (
-            df_a["aspect"].astype(str).str.lower().eq(str(aspect_code).lower())
-        )
-        mask_b = (
-            df_b["aspect"].astype(str).str.lower().eq(str(aspect_code).lower())
-        )
-        a = df_a.loc[mask_a, ["Protein", "IC"]]
-        b = df_b.loc[mask_b, ["Protein", "IC"]]
-        m = a.merge(b, on="Protein", how="inner", suffixes=("_a", "_b")).dropna()
-        return m["IC_a"].to_numpy(), m["IC_b"].to_numpy(), len(m)
+        _mask = df["aspect"].astype(str).str.lower().eq(str(aspect_code).lower())
+        return df.loc[_mask, "IC"].dropna()
 
 
     def mwu_with_rbc(x, y):
@@ -980,166 +1196,121 @@ def _(
         y = y[np.isfinite(y)]
         if len(x) == 0 or len(y) == 0:
             return np.nan, np.nan
-        res = mannwhitneyu(x, y, alternative="two-sided", method="auto")
-        U = res.statistic
-        n1, n2 = len(x), len(y)
-        rbc = 1.0 - (2.0 * U) / (n1 * n2)
-        return res.pvalue, rbc
+        _res = mannwhitneyu(x, y, alternative="two-sided", method="auto")
+        _U = _res.statistic
+        _n1, _n2 = len(x), len(y)
+        _rbc = 1.0 - (2.0 * _U) / (_n1 * _n2)
+        return _res.pvalue, _rbc
 
 
-    def draw_violin(ax, data, labels):
-        pos = np.arange(1, len(data) + 1)
-        vp = ax.violinplot(
-            [np.asarray(d) for d in data],
-            positions=pos,
+    def draw_violin(_ax, _data, _labels, _colors):
+        _positions = np.arange(1, len(_data) + 1)
+
+        _vp = _ax.violinplot(
+            [np.asarray(d) for d in _data],
+            positions=_positions,
             widths=0.75,
             showmeans=False,
             showmedians=True,
             showextrema=False,
         )
-        for body in vp["bodies"]:
-            body.set_facecolor("#1192e8")
-            body.set_edgecolor("black")
-            body.set_alpha(0.50)
-            body.set_linewidth(1.0)
-        vp["cmedians"].set_color("black")
-        vp["cmedians"].set_linewidth(1.5)
-        ax.set_xticks(pos)
-        ax.set_xticklabels(labels, rotation=30, ha="center")
+
+        # Color each violin separately
+        for _body, _color in zip(_vp["bodies"], _colors):
+            _body.set_facecolor(_color)
+            _body.set_edgecolor("black")
+            _body.set_alpha(1.0)
+            _body.set_linewidth(1.0)
+
+        _vp["cmedians"].set_color("black")
+        _vp["cmedians"].set_linewidth(1.5)
+
+        _ax.set_xticks(_positions)
+        _ax.set_xticklabels(_labels, rotation=30, ha="center", fontsize=12)
+        _ax.tick_params(axis="y", labelsize=14)
+
         # median annotations
-        for i, d in enumerate(data, start=1):
-            d = np.asarray(d)
-            if d.size:
-                med = float(np.nanmedian(d))
-                ax.text(i, med, f"{med:.1f}", ha="center", va="bottom", fontsize=9)
-        return pos
+        for _i, _d in enumerate(_data, start=1):
+            _d = np.asarray(_d)
+            if _d.size:
+                _med = float(np.nanmedian(_d))
+                _ax.text(
+                    _i, _med, f"{_med:.1f}", ha="center", va="bottom", fontsize=10
+                )
+
+        return _positions
 
 
-    # Create figure
-    fig, axes = plt.subplots(2, 3, figsize=(7, 7), sharey="row")
+    # ---- Figure: single row (global / unpaired MWU) ----
+    fig, axes = plt.subplots(1, 3, figsize=(10, 5), sharey=True)
     labels = [name for name, _ in SOURCES]
 
-    for col, (asp_code, asp_title) in enumerate(ASPECTS):
-        # Row 0: Global (unpaired Mann–Whitney U)
-        ax0 = axes[0, col]
-        global_series = [ic_series(df, asp_code) for _, df in SOURCES]
-        draw_violin(ax0, [s.to_numpy() for s in global_series], labels)
-        ax0.set_title(asp_title)
+    for col, (asp_code, _asp_title_unused) in enumerate(ASPECTS):
+        _ax = axes[col]
+
+        _global_series = [ic_series(df, asp_code) for _, df in SOURCES]
+        _data = [s.to_numpy() for s in _global_series]
+        _positions = draw_violin(_ax, _data, labels, colors)
+
+        _ax.text(
+            0.02,
+            0.98,
+            _asp_title_unused,  # e.g. "BP", "MF", "CC"
+            transform=_ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=10,
+        )
+
         if col == 0:
-            ax0.set_ylabel("IC (max per protein)")
-        # Add n= labels
-        ymin = ax0.get_ylim()[0]
-        for i, n in enumerate([len(s) for s in global_series], start=1):
-            ax0.text(
-                i,
-                ymin - 2.5,
-                f"n={n}",
+            _ax.set_ylabel("IC (max per protein)", fontsize=14)
+
+        # Grey counts in parentheses under each bin
+        _n_labels = [len(s) for s in _global_series]
+        for _pos, _n in zip(_positions, _n_labels):
+            _ax.text(
+                _pos,
+                -0.1,
+                f"({_n})",
                 ha="center",
                 va="top",
-                fontsize=9,
+                fontsize=10,
+                color="0.5",
                 rotation=30,
+                transform=_ax.get_xaxis_transform(),
             )
 
-        # Statistical tests and brackets
+        # Statistical tests + brackets (MWU)
         for k, (i, j) in enumerate(PAIRS):
-            p, _ = mwu_with_rbc(
-                global_series[i - 1].to_numpy(), global_series[j - 1].to_numpy()
+            _p, _ = mwu_with_rbc(
+                _global_series[i - 1].to_numpy(), _global_series[j - 1].to_numpy()
             )
-            stars = p_to_stars(p) if np.isfinite(p) else "n/a"
-            y_ax = 0.75 + k * 0.08
+            _stars = p_to_stars(_p) if np.isfinite(_p) else "n/a"
+            _y_ax = 0.75 + k * 0.08
             add_sig_bracket_axes(
-                ax0, i, j, y_ax=y_ax, h_ax=0.03, stars=stars, stars_offset_pts=0
+                _ax, i, j, y_ax=_y_ax, h_ax=0.03, stars=_stars, stars_offset_pts=0
             )
 
-        # Row 1: Common proteins (paired Wilcoxon)
-        ax1 = axes[1, col]
-        prot_sets = [proteins_in_aspect(df, asp_code) for _, df in SOURCES]
-        common = set.intersection(*prot_sets) if prot_sets else set()
-        common_dfs = [
-            (name, filter_to_proteins(df, common, asp_code))
-            for name, df in SOURCES
-        ]
-        common_series = [ic_series(df, asp_code) for _, df in common_dfs]
-        draw_violin(ax1, [s.to_numpy() for s in common_series], labels)
-        ax1.set_title(asp_title)
-        if col == 0:
-            ax1.set_ylabel("IC (max per protein)")
-        # Add n= labels
-        ymin = ax1.get_ylim()[0]
-        for i, n in enumerate([len(s) for s in common_series], start=1):
-            ax1.text(
-                i,
-                ymin - 2.5,
-                f"n={n}",
-                ha="center",
-                va="top",
-                fontsize=9,
-                rotation=30,
-            )
+    _ymin, _ymax = _ax.get_ylim()
+    _ax.set_ylim(_ymin, _ymax * 1.10)  # headroom
 
-        # Statistical tests and brackets
-        for k, (i, j) in enumerate(PAIRS):
-            _, df_i = common_dfs[i - 1]
-            _, df_j = common_dfs[j - 1]
-            a, b, n_pairs = paired_arrays(df_i, df_j, asp_code)
-            if n_pairs == 0:
-                stars = "n/a"
-            else:
-                diffs = a - b
-                if np.allclose(diffs, 0):
-                    p = 1.0
-                else:
-                    p = wilcoxon(
-                        a, b, alternative="two-sided", zero_method="wilcox"
-                    ).pvalue
-                stars = p_to_stars(p)
-            y_ax = 0.75 + k * 0.08
-            add_sig_bracket_axes(
-                ax1, i, j, y_ax=y_ax, h_ax=0.03, stars=stars, stars_offset_pts=0
-            )
+    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.20, top=1, wspace=0.05)
 
-    fig.suptitle("Per-protein max IC comparison", fontsize=14, y=1.02)
-    fig.text(
-        0.25,
-        0.99,
-        "Global (unpaired Mann–Whitney U)",
-        ha="left",
-        va="top",
-        fontsize=12,
-        fontweight="bold",
-    )
-    fig.text(
-        0.10,
-        0.48,
-        "Common proteins across all methods (paired Wilcoxon)",
-        ha="left",
-        va="top",
-        fontsize=12,
-        fontweight="bold",
-    )
-    fig.subplots_adjust(
-        left=0.00,
-        right=0.98,
-        bottom=0.10,
-        top=0.92,
-        wspace=0.05,  # horizontal spacing between columns
-        hspace=0.55,  # vertical spacing between rows
-    )
-    plt.savefig("plots/max_ic_distribution.svg", format="svg")
+    plt.savefig(f"{PLOT_DIR}/max_ic_distribution.svg", format="svg")
     plt.show()
-    return (wilcoxon,)
+    return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## IC / score perturbations
+    ## Max IC by score threshold
     """)
     return
 
 
 @app.cell
-def _(dFseq, eggnog, mannwhitneyu, mdF100, np, pd, plt):
+def _(PLOT_DIR, RAW_DIR, dFseq, eggnog_go, mannwhitneyu, mdF100, np, pd, plt):
     def apply_score_filter(df, min_score=None, score_col="Score"):
         if min_score is None:
             return df
@@ -1162,7 +1333,7 @@ def _(dFseq, eggnog, mannwhitneyu, mdF100, np, pd, plt):
 
     # --- eggNOG: compute once, then replicate across conditions for consistent faceting ---
     _ic_eggnog_base = (
-        eggnog.groupby(["Protein", "aspect"], as_index=False)["IC"]
+        eggnog_go.groupby(["Protein", "aspect"], as_index=False)["IC"]
         .max()
         .assign(method="eggnog")
     )
@@ -1301,6 +1472,10 @@ def _(dFseq, eggnog, mannwhitneyu, mdF100, np, pd, plt):
         "Per-protein max IC by method, aspect, and score filtering", y=0.995
     )
     _fig.tight_layout()
+
+    _fig.savefig(f"{PLOT_DIR}/max_ic_by_score_threshold.svg", bbox_inches="tight")
+    ic_all.to_csv(f"{RAW_DIR}/max_ic_by_score_threshold.csv", index=False)
+
     _fig
     return (ic_all,)
 
@@ -1321,185 +1496,184 @@ def _(mo):
 
 @app.cell
 def _(
-    add_n_text_axes,
+    PLOT_DIR,
+    RAW_DIR,
     add_sig_bracket_axes,
     dFseq,
+    mannwhitneyu,
     mdF100,
     np,
     p_to_stars,
+    pd,
     plt,
-    wilcoxon,
 ):
-    def plot_median_score_violins_paired(dFseq_df, mdF100_df):
-        # per-protein median score tables (local)
-        score_dfseq_local = (
+    def plot_median_score_violins_mwu(dFseq_df, mdF100_df):
+        # per-protein median score tables
+        _score_dfseq = (
             dFseq_df.groupby(["Protein", "aspect"])["Score"].median().reset_index()
         )
-        score_mdf_local = (
+        _score_mdf = (
             mdF100_df.groupby(["Protein", "aspect"])["Score"]
             .median()
             .reset_index()
         )
 
-        sources_local = [
-            ("dFseq", score_dfseq_local),
-            ("mdF", score_mdf_local),
+        _sources = [
+            ("deepFRI-seq", _score_dfseq),
+            ("mdeepFRI", _score_mdf),
         ]
-        aspects_local = [("bp", "BP"), ("mf", "MF"), ("cc", "CC")]
+        _aspects = [("bp", "BP"), ("mf", "MF"), ("cc", "CC")]
 
-        def _scores_by_aspect_local(
-            df_local,
-            aspect_code_local,
-            protein_col_local="Protein",
-            aspect_col_local="aspect",
-            score_col_local="Score",
-        ):
-            mask_local = (
-                df_local[aspect_col_local].astype(str).str.lower()
-                == str(aspect_code_local).lower()
-            )
-            return df_local.loc[
-                mask_local, [protein_col_local, score_col_local]
-            ].dropna()
+        _method_colors = {
+            "deepFRI-seq": "#33b1ff",
+            "mdeepFRI": "#3ddbd9",
+        }
 
-        def _paired_scores_local(
-            df_a_local,
-            df_b_local,
-            aspect_code_local,
-            protein_col_local="Protein",
-            aspect_col_local="aspect",
-            score_col_local="Score",
-        ):
-            a_local = _scores_by_aspect_local(
-                df_a_local,
-                aspect_code_local,
-                protein_col_local,
-                aspect_col_local,
-                score_col_local,
-            ).rename(columns={score_col_local: "a"})
-            b_local = _scores_by_aspect_local(
-                df_b_local,
-                aspect_code_local,
-                protein_col_local,
-                aspect_col_local,
-                score_col_local,
-            ).rename(columns={score_col_local: "b"})
-            merged_local = a_local.merge(
-                b_local, on=protein_col_local, how="inner"
-            ).dropna()
-            return (
-                merged_local["a"].to_numpy(),
-                merged_local["b"].to_numpy(),
-                len(merged_local),
-            )
+        ##### SAVE RAW DATA FOR JOURNAL #####
+        _records = []
 
-        # bracket layout (LOCAL names)
-        br_y0_local = 0.9
-        br_step_local = 0.09
-        br_h_local = 0.035
+        for _method_name, _df in _sources:
+            _tmp = _df.copy()
+            _tmp = _tmp[["Protein", "aspect", "Score"]].copy()
+            _tmp["method"] = _method_name
+            _tmp = _tmp.rename(columns={"Score": "median_score"})
+            _records.append(_tmp)
 
-        fig_local, axes_local = plt.subplots(1, 3, figsize=(7, 5), sharey=False)
+        source_data_scores = pd.concat(_records, ignore_index=True)
 
-        for ax_local, (asp_code_local, asp_title_local) in zip(
-            axes_local, aspects_local
-        ):
-            # violin data (unpaired display)
-            data_local = []
-            for _, df_local in sources_local:
-                vals_local = _scores_by_aspect_local(df_local, asp_code_local)[
-                    "Score"
-                ].to_numpy()
-                data_local.append(vals_local)
+        # standardize aspect formatting
+        source_data_scores["aspect"] = source_data_scores["aspect"].str.lower()
 
-            labels_local = [lab for lab, _ in sources_local]
-            pos_local = np.arange(1, len(data_local) + 1)
+        # Save file
+        source_data_scores.to_csv(
+            f"{RAW_DIR}/median_score_distribution.csv",
+            index=False,
+        )
 
-            vp_local = ax_local.violinplot(
-                data_local,
-                positions=pos_local,
+        #### #### #### #### #### #### #### #### ####
+
+        def _series(df, _asp):
+            _mask = df["aspect"].astype(str).str.lower().eq(str(_asp).lower())
+            return df.loc[_mask, "Score"].dropna()
+
+        def _mwu(x, y):
+            x = np.asarray(x)
+            y = np.asarray(y)
+            x = x[np.isfinite(x)]
+            y = y[np.isfinite(y)]
+            if len(x) == 0 or len(y) == 0:
+                return np.nan
+            return mannwhitneyu(
+                x, y, alternative="two-sided", method="auto"
+            ).pvalue
+
+        def _draw_violin(_ax, _data, _labels, _colors):
+            _positions = np.arange(1, len(_data) + 1)
+            _vp = _ax.violinplot(
+                [np.asarray(d) for d in _data],
+                positions=_positions,
                 widths=0.75,
                 showmeans=False,
                 showmedians=True,
                 showextrema=False,
             )
+            for _body, _c in zip(_vp["bodies"], _colors):
+                _body.set_facecolor(_c)
+                _body.set_edgecolor("black")
+                _body.set_alpha(0.9)
+                _body.set_linewidth(1.0)
 
-            for body_local in vp_local["bodies"]:
-                body_local.set_facecolor("#1192e8")
-                body_local.set_edgecolor("black")
-                body_local.set_alpha(0.50)
-                body_local.set_linewidth(1.0)
+            _vp["cmedians"].set_color("black")
+            _vp["cmedians"].set_linewidth(1.5)
 
-            vp_local["cmedians"].set_color("black")
-            vp_local["cmedians"].set_linewidth(1.5)
-
-            ax_local.set_xticks(pos_local)
-            ax_local.set_xticklabels(labels_local, rotation=30)
+            _ax.set_xticks(_positions)
+            _ax.set_xticklabels(_labels, rotation=30, ha="center", fontsize=14)
 
             # median labels
-            for idx_local, vals_local in enumerate(data_local, start=1):
-                if len(vals_local):
-                    med_local = float(np.nanmedian(vals_local))
-                    ax_local.text(
-                        idx_local,
-                        med_local,
-                        f"{med_local:.2f}",
+            for _i, _vals in enumerate(_data, start=1):
+                _vals = np.asarray(_vals)
+                if _vals.size:
+                    _med = float(np.nanmedian(_vals))
+                    _ax.text(
+                        _i,
+                        _med,
+                        f"{_med:.2f}",
                         ha="center",
                         va="bottom",
-                        fontsize=9,
+                        fontsize=10,
                     )
 
-            ax_local.set_title(asp_title_local, pad=18)
-            if asp_code_local == "bp":
-                ax_local.set_ylabel("Score (median per protein)")
+            return _positions
 
-            # paired Wilcoxon + bracket (dFseq vs mdF)
-            a_local, b_local, n_pairs_local = _paired_scores_local(
-                sources_local[0][1], sources_local[1][1], asp_code_local
+        fig, axes = plt.subplots(1, 3, figsize=(8, 5), sharey=True)
+
+        _labels = [n for n, _ in _sources]
+        _colors = [_method_colors[n] for n in _labels]
+
+        for col, (_asp_code, _asp_label) in enumerate(_aspects):
+            _ax = axes[col]
+
+            _series_list = [_series(df, _asp_code) for _, df in _sources]
+            _data = [s.to_numpy() for s in _series_list]
+            _positions = _draw_violin(_ax, _data, _labels, _colors)
+
+            # In-panel ontology label (no subplot title)
+            _ax.text(
+                0.02,
+                0.98,
+                _asp_label,
+                transform=_ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=10,
             )
 
-            if n_pairs_local == 0:
-                p_local = np.nan
-                stars_local = "n/a"
-            else:
-                diffs_local = a_local - b_local
-                if np.allclose(diffs_local, 0):
-                    p_local = 1.0
-                else:
-                    p_local = wilcoxon(
-                        a_local,
-                        b_local,
-                        alternative="two-sided",
-                        zero_method="wilcox",
-                    ).pvalue
-                stars_local = p_to_stars(p_local)
+            if col == 0:
+                _ax.set_ylabel("Score (median per protein)", fontsize=14)
 
-            y_ax_local = br_y0_local
+            # Grey counts in parentheses under each bin (no "n=")
+            _n_labels = [len(s) for s in _series_list]
+            for _pos, _n in zip(_positions, _n_labels):
+                _ax.text(
+                    _pos,
+                    -0.12,
+                    f"({_n})",
+                    ha="center",
+                    va="top",
+                    fontsize=10,
+                    color="0.5",
+                    rotation=30,
+                    transform=_ax.get_xaxis_transform(),
+                )
+
+            # Mann–Whitney U + bracket (dFseq vs mdF)
+            _p = _mwu(_data[0], _data[1])
+            _stars = p_to_stars(_p) if np.isfinite(_p) else "n/a"
+
+            # add top headroom for bracket/asterisks (works even with varying ranges)
+            _ymin, _ymax = _ax.get_ylim()
+            _ax.set_ylim(_ymin, _ymax * 1.04)
+
             add_sig_bracket_axes(
-                ax_local,
+                _ax,
                 1,
                 2,
-                y_ax=y_ax_local,
-                h_ax=br_h_local,
-                stars=stars_local,
+                y_ax=0.85,
+                h_ax=0.035,
+                stars=_stars,
                 stars_offset_pts=3,
             )
-            add_n_text_axes(
-                ax_local,
-                1,
-                2,
-                y_ax=y_ax_local,
-                h_ax=br_h_local,
-                n_pairs=n_pairs_local,
-                n_offset_pts=-2,
-            )
 
-        fig_local.suptitle("Per protein median score distributions", y=0.98)
-        fig_local.tight_layout(rect=[0, 0, 1, 0.95])
+        # layout: extra bottom space for counts
+        fig.subplots_adjust(
+            left=0.08, right=0.99, bottom=0.25, top=0.98, wspace=0.10
+        )
+        plt.savefig(f"{PLOT_DIR}/median_score_distribution.svg", format="svg", dpi=300)
         plt.show()
 
 
     # run it
-    plot_median_score_violins_paired(dFseq, mdF100)
+    plot_median_score_violins_mwu(dFseq, mdF100)
     return
 
 
@@ -1512,9 +1686,9 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, eggnog, mdF100):
+def _(dFseq, eggnog_go, mdF100):
     _sources = [
-        ("eggnog", eggnog),
+        ("eggnog", eggnog_go),
         ("dFseq", dFseq),
         ("mdF", mdF100),
     ]
@@ -1528,8 +1702,8 @@ def _(dFseq, eggnog, mdF100):
 
 
 @app.cell
-def _(eggnog):
-    print(eggnog)
+def _(eggnog_go):
+    print(eggnog_go)
     return
 
 
@@ -1566,7 +1740,7 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, deep_go, eggnog, ic_df, mdF100, prop):
+def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
     mdf_propped = prop.propagate_go_annotations(
         mdF100,
         protein_col="Protein",
@@ -1580,6 +1754,8 @@ def _(dFseq, deep_go, eggnog, ic_df, mdF100, prop):
         obsolete_prefer="replaced_by",
         score_min=0.3,  # drop low-score annotations first
         round_decimals=3,  # round Score/IC/percent
+        filter_predictable_terms=True,  # Enable filtering to only include dF predictable terms
+        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
     )
 
     dFseq_propped = prop.propagate_go_annotations(
@@ -1598,7 +1774,7 @@ def _(dFseq, deep_go, eggnog, ic_df, mdF100, prop):
     )
 
     eggnog_propped = prop.propagate_go_annotations(
-        eggnog,
+        eggnog_go,
         protein_col="Protein",
         term_col="go_term",
         score_col=None,
@@ -1609,6 +1785,8 @@ def _(dFseq, deep_go, eggnog, ic_df, mdF100, prop):
         obsolete_mode="drop",  # or "map"
         obsolete_prefer="replaced_by",
         round_decimals=3,  # round Score/IC/percent
+        filter_predictable_terms=True,  # Enable filtering
+        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
     )
 
     deepgo_propped = prop.propagate_go_annotations(
@@ -1624,6 +1802,8 @@ def _(dFseq, deep_go, eggnog, ic_df, mdF100, prop):
         obsolete_prefer="replaced_by",
         score_min=0.3,
         round_decimals=3,  # round Score/IC/percent
+        filter_predictable_terms=True,  # Enable filtering
+        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
     )
     return dFseq_propped, deepgo_propped, eggnog_propped, mdf_propped
 
@@ -1631,22 +1811,22 @@ def _(dFseq, deep_go, eggnog, ic_df, mdF100, prop):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ### Concordance mdf vs df
+    ### Concordance mdF vs deepFRI-seq
     """)
     return
 
 
 @app.cell
-def _(dFseq_propped, gplot, mdf_propped, plt):
-    _per_prot, _per_bin = gplot.concordance_by_ic(
+def _(PLOT_DIR, dFseq_propped, gplot, mdf_propped, plt):
+    _per_prot, _per_bin, _stats = gplot.concordance_by_ic(
         mdf_propped[0],
         dFseq_propped[0],
         protein_col="Protein",
         term_col="GO_term",
         ic_col="IC",
         metric="jaccard",  # 0..1 overlap
-        score_col="Score",
-        score_min=0.1,  # or e.g. 0.2
+        score_col="Score",  # obsolete terms are removed
+        score_min=0.2,  # or e.g. 0.2
         ic_min=1.0,
         ic_max=14.0,  # bins 1..13
         bin_width=1.0,
@@ -1657,8 +1837,16 @@ def _(dFseq_propped, gplot, mdf_propped, plt):
     _fig = gplot.plot_concordance_boxplot(
         _per_prot,
         _per_bin,
-        title="mdF concordance with df_seq",
+        title="mdF concordance with deepFRI-seq",
     )
+
+    gplot.save_concordance_artifacts(
+        _fig,
+        _per_prot,
+        out_prefix="concordance_mdf_vs_dfseq",
+        out_dir=PLOT_DIR,
+    )
+
     plt.show()
     return
 
@@ -1672,8 +1860,8 @@ def _(mo):
 
 
 @app.cell
-def _(eggnog_propped, gplot, mdf_propped, plt):
-    per_prot, per_bin = gplot.concordance_by_ic(
+def _(PLOT_DIR, eggnog_propped, gplot, mdf_propped, plt):
+    per_prot, per_bin, stats = gplot.concordance_by_ic(
         mdf_propped[0],
         eggnog_propped[0],
         protein_col="Protein",
@@ -1683,18 +1871,183 @@ def _(eggnog_propped, gplot, mdf_propped, plt):
         score_col="Score",
         score_min=0.3,  # or e.g. 0.2
         ic_min=1.0,
-        ic_max=14.0,  # bins 1..13
+        ic_max=9,  # bins 1..13
         bin_width=1.0,
         drop_propagated=None,  # True for originals, False for propagated only and None for both
         require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
+        by_aspect=True,
+        filter_predictable_terms=False,  # Filtering of predictable terms (REMOVES ALSO PROPAGATED TERMS)
+        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
     )
 
     _fig = gplot.plot_concordance_boxplot(
         per_prot,
         per_bin,
-        title="mdF concordance with EggNOG",
+        # title="mdF concordance with EggNOG",
+    )
+
+    gplot.save_concordance_artifacts(
+        _fig,
+        per_prot,
+        out_prefix="concordance_mdf_vs_eggnog",
+        out_dir=PLOT_DIR,
+    )
+
+    plt.show()
+    return per_bin, per_prot
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Compact concordance: faceted violins (mdf vs eggnog)
+    """)
+    return
+
+
+@app.cell
+def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
+    _fig_faceted = gplot.plot_concordance_faceted(
+        per_prot, per_bin, figsize=(5, 5)
+    )
+
+    gplot.save_concordance_artifacts(
+        _fig_faceted,
+        per_prot,
+        out_prefix="concordance_mdf_vs_eggnog_faceted",
+        out_dir=PLOT_DIR,
+    )
+
+    plt.show()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Concordance heatmap (mdF vs eggNOG)
+    """)
+    return
+
+
+@app.cell
+def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
+    _fig_heatmap = gplot.plot_concordance_heatmap(
+        per_prot,
+        per_bin,
+    )
+    _fig_heatmap.savefig(
+        f"{PLOT_DIR}/concordance_mdf_vs_eggnog_heatmap.svg", bbox_inches="tight"
     )
     plt.show()
+    return
+
+
+@app.cell
+def _(per_prot):
+    per_prot.query("Protein=='MGYG000000354_00030'")
+    return
+
+
+@app.cell
+def _(mdf_propped):
+    mdf_propped[0].query("Protein=='MGYG000000354_00030' & IC <= 6 & IC >5")
+    return
+
+
+@app.cell
+def _(eggnog_propped):
+    eggnog_propped[0].query("Protein=='MGYG000000354_00030' & IC <= 6 & IC >5")
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Propagated terms fraction by IC
+    """)
+    return
+
+
+@app.cell
+def _(PLOT_DIR, RAW_DIR, mdf_propped, np, plt):
+    # Number of bins (change if needed)
+    _n_bins = 20
+
+    _df = mdf_propped[0][np.isfinite(mdf_propped[0]["IC"])].copy()
+
+    _df["_IC_int_bin"] = np.floor(_df["IC"]).astype(int)
+
+    # Aggregate statistics
+    _bin_stats = _df.groupby("_IC_int_bin", observed=True).agg(
+        total_terms=("Propagated", "count"),
+        propagated_terms=("Propagated", lambda x: (x == True).sum()),
+    )
+
+    _bin_stats["_fraction_propagated"] = (
+        _bin_stats["propagated_terms"] / _bin_stats["total_terms"]
+    )
+
+    _bin_stats = _bin_stats.reset_index()
+
+    _bin_stats
+
+    _figsize = (8, 4)
+
+    _fig, _ax = plt.subplots(figsize=_figsize)
+
+    _ax.bar(
+        _bin_stats["_IC_int_bin"],
+        _bin_stats["_fraction_propagated"],
+    )
+
+    _xticks = _bin_stats["_IC_int_bin"]
+
+    _labels = [f"{int(ic)}" for ic in _xticks]
+
+    _ax.set_xticks(_xticks)
+    _ax.set_xticklabels(_labels)
+
+    # Second annotation row
+    for ic, n in zip(_bin_stats["_IC_int_bin"], _bin_stats["total_terms"]):
+        _ax.text(
+            ic,
+            -0.07,  # vertical position below axis
+            f"(n={int(n)})",
+            ha="center",
+            va="top",
+            transform=_ax.get_xaxis_transform(),
+            rotation=30,
+            fontsize=9,
+        )
+
+    _ax.set_xlabel("IC (integer bin)", labelpad=33)
+    _ax.set_ylabel("Fraction Propagated")
+    _ax.set_title("Fraction of Propagated Terms per IC Level")
+
+    plt.tight_layout()
+
+    _fig.savefig(f"{PLOT_DIR}/propagated_fraction_by_ic.svg", bbox_inches="tight")
+    _bin_stats.to_csv(f"{RAW_DIR}/propagated_fraction_by_ic.csv", index=False)
+
+    plt.show()
+    return
+
+
+@app.cell
+def _(mdf_propped, np):
+    # calculate fraction of max IC terms that are propagated
+
+    _df = mdf_propped[0][np.isfinite(mdf_propped[0]["IC"])].copy()
+
+    _max = _df.loc[_df.groupby("Protein")["IC"].idxmax()]
+
+    _max["Propagated"].mean()
     return
 
 
@@ -1707,8 +2060,8 @@ def _(mo):
 
 
 @app.cell
-def _(deepgo_propped, gplot, mdf_propped, plt):
-    _per_prot, _per_bin = gplot.concordance_by_ic(
+def _(PLOT_DIR, deepgo_propped, gplot, mdf_propped, plt):
+    _per_prot, _per_bin, _stats = gplot.concordance_by_ic(
         mdf_propped[0],
         deepgo_propped[0],
         protein_col="Protein",
@@ -1718,7 +2071,7 @@ def _(deepgo_propped, gplot, mdf_propped, plt):
         score_col="Score",
         score_min=0.3,  # or e.g. 0.2
         ic_min=1.0,
-        ic_max=14.0,  # bins 1..13
+        ic_max=9.0,  # bins 1..13
         bin_width=1.0,
         drop_propagated=None,  # True for originals, False for propagated only and None for both
         require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
@@ -1727,8 +2080,16 @@ def _(deepgo_propped, gplot, mdf_propped, plt):
     _fig = gplot.plot_concordance_boxplot(
         _per_prot,
         _per_bin,
-        title="mdF concordance with mdeepGO",
+        title="mdF concordance with DeepGOMeta",
     )
+
+    gplot.save_concordance_artifacts(
+        _fig,
+        _per_prot,
+        out_prefix="concordance_mdf_vs_deepgo",
+        out_dir=PLOT_DIR,
+    )
+
     plt.show()
     return
 
@@ -1742,8 +2103,8 @@ def _(mo):
 
 
 @app.cell
-def _(deepgo_propped, eggnog_propped, gplot, plt):
-    _per_prot, _per_bin = gplot.concordance_by_ic(
+def _(PLOT_DIR, deepgo_propped, eggnog_propped, gplot, plt):
+    _per_prot, _per_bin, _stats = gplot.concordance_by_ic(
         eggnog_propped[0],
         deepgo_propped[0],
         protein_col="Protein",
@@ -1753,7 +2114,7 @@ def _(deepgo_propped, eggnog_propped, gplot, plt):
         score_col="Score",
         score_min=0.3,  # or e.g. 0.2
         ic_min=1.0,
-        ic_max=14.0,  # bins 1..13
+        ic_max=9.0,  # bins 1..13
         bin_width=1.0,
         drop_propagated=None,  # True for originals, False for propagated only and None for both
         require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
@@ -1762,394 +2123,17 @@ def _(deepgo_propped, eggnog_propped, gplot, plt):
     _fig = gplot.plot_concordance_boxplot(
         _per_prot,
         _per_bin,
-        title="eggnog concordance with mdeepGO",
+        title="eggNOG concordance with DeepGOMeta",
     )
+
+    gplot.save_concordance_artifacts(
+        _fig,
+        _per_prot,
+        out_prefix="concordance_deepgo_vs_eggnog",
+        out_dir=PLOT_DIR,
+    )
+
     plt.show()
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    # Why IC deepFRIseq > mdF?
-    """)
-    return
-
-
-@app.cell
-def _(dFseq, eggnog, mdF100, pd):
-    IC_swissprot = pd.read_csv("data/external/IC_swissprot.csv")
-
-    dFseq_swiss = pd.merge(
-        dFseq.rename(columns={"IC": "IC_cafa"}),
-        IC_swissprot,
-        left_on="go_term",
-        right_on="go_term",
-        how="left",
-    ).rename(columns={"IC": "IC_swissprot"})
-
-    mdF100_swiss = pd.merge(
-        mdF100.rename(columns={"IC": "IC_cafa"}),
-        IC_swissprot,
-        left_on="go_term",
-        right_on="go_term",
-        how="left",
-    ).rename(columns={"IC": "IC_swissprot"})
-
-    eggnog_swiss = pd.merge(
-        eggnog.rename(columns={"IC": "IC_cafa"}),
-        IC_swissprot,
-        left_on="go_term",
-        right_on="go_term",
-        how="left",
-    ).rename(columns={"IC": "IC_swissprot"})
-    return dFseq_swiss, eggnog_swiss, mdF100_swiss
-
-
-@app.cell
-def _(
-    add_sig_bracket,
-    dFseq_swiss,
-    eggnog_swiss,
-    mannwhitneyu,
-    mdF100_swiss,
-    np,
-    p_to_stars,
-    plt,
-):
-    ic_dFseq_s20_swiss_ic = (
-        dFseq_swiss.query("Score >= 0.2")
-        .groupby(["Protein", "aspect"])["IC_cafa"]
-        .max()
-        .reset_index()
-    )
-
-    ic_mdF100_s30_swiss_ic = (
-        mdF100_swiss.query("Score >= 0.3")
-        .groupby(["Protein", "aspect"])["IC_cafa"]
-        .max()
-        .reset_index()
-    )
-
-    ic_eggnog_swiss_swiss_ic = (
-        eggnog_swiss.groupby(["Protein", "aspect"])["IC_cafa"].max().reset_index()
-    )
-
-    _sources = [
-        ("eggnog", ic_eggnog_swiss_swiss_ic),
-        ("dFseq_s20", ic_dFseq_s20_swiss_ic),
-        ("mdF_s30", ic_mdF100_s30_swiss_ic),
-    ]
-
-    _aspects = [
-        ("bp", "BP"),
-        ("mf", "MF"),
-        ("cc", "CC"),
-    ]
-
-
-    def _ic_by_aspect(df, aspect, aspect_col=None, score_col="IC"):
-        aspect_norm = str(aspect).lower()
-
-        # detect aspect column if not given
-        if aspect_col is None:
-            for col in df.columns:
-                if col.lower() == "aspect":
-                    aspect_col = col
-                    break
-
-        mask = df[aspect_col].astype(str).str.lower() == aspect_norm
-        return df.loc[mask, score_col].dropna()
-
-
-    _fig, _axes = plt.subplots(1, 3, figsize=(9, 5), sharey=False)
-
-    for _ax, (_asp_code, _asp_title) in zip(_axes, _aspects):
-        _data = [
-            _ic_by_aspect(df, _asp_code, aspect_col="aspect", score_col="IC_cafa")
-            for _, df in _sources
-        ]
-        _labels = [label for label, _ in _sources]
-
-        _bp = _ax.boxplot(_data, tick_labels=_labels, sym=".", widths=0.5)
-
-        # --- annotate medians ---
-        for _i, _median_line in enumerate(_bp["medians"], start=1):
-            _median_val = _median_line.get_ydata().mean()
-            _ax.text(
-                _i,
-                _median_val,
-                f"{_median_val:.1f}",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-            )
-
-        _ax.set_title(_asp_title)
-        if _asp_code == "bp":
-            _ax.set_ylabel("IC (max per protein)")
-
-        # --- significance brackets (pairwise) ---
-        _pairs = [
-            (1, 2),
-            (1, 3),
-            (2, 3),
-        ]  # eggnog vs dFseq, eggnog vs mdF, dFseq vs mdF
-
-        # baseline height just above the highest point shown in this panel
-        _panel_max = max(
-            [np.nanmax(d.values) if len(d) else np.nan for d in _data]
-        )
-        _y = _panel_max
-        _y_range = np.ptp(_ax.get_ylim()) if np.ptp(_ax.get_ylim()) > 0 else 1.0
-        _step = 0.06 * _y_range  # vertical spacing between brackets
-        _h = 0.015 * _y_range  # bracket height
-
-        for _k, (_i, _j) in enumerate(_pairs):
-            _a = _data[_i - 1].values
-            _b = _data[_j - 1].values
-
-            # Mann–Whitney U (two-sided)
-            _p = mannwhitneyu(_a, _b, alternative="two-sided").pvalue
-
-            _stars = p_to_stars(_p)
-            add_sig_bracket(_ax, _i, _j, _y + _k * _step, +_h, _stars)
-
-        # make sure brackets fit
-        _ax.set_ylim(top=_y + len(_pairs) * _step + 0.08 * _y_range)
-
-    _fig.suptitle("Per protein Max CAFA IC distributions", y=1.00)
-    plt.tight_layout()
-    plt.show()
-    return
-
-
-@app.cell
-def _(mdF100_swiss):
-    mdF100_swiss[
-        ["Protein", "go_term", "Score", "Annotation", "IC_swissprot", "IC_cafa"]
-    ].query("Protein == 'MGYG000001551_00428'")
-    return
-
-
-@app.cell
-def _(dFseq_swiss):
-    dFseq_swiss[
-        ["Protein", "go_term", "Score", "Name", "IC_swissprot", "IC_cafa"]
-    ].query("Protein == 'MGYG000001551_00428'")
-    return
-
-
-@app.cell
-def _(mdF100_swiss):
-    print(mdF100_swiss)
-    return
-
-
-@app.cell
-def _(dFseq_swiss):
-    print(dFseq_swiss)
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ## How many go-terms are NaNs in each set?
-    """)
-    return
-
-
-@app.cell
-def _(dFseq_swiss, mdF100_swiss, pd):
-    def go_term_ic_nan_counts(df):
-        g = df.groupby("go_term")[["IC_cafa", "IC_swissprot"]]
-
-        has_ic = g.apply(lambda x: x.notna().any())
-        total_go_terms = has_ic.shape[0]
-
-        return pd.Series(
-            {
-                "total_go_terms": total_go_terms,
-                "IC_cafa_nan": (~has_ic["IC_cafa"]).sum(),
-                "IC_swissprot_nan": (~has_ic["IC_swissprot"]).sum(),
-            }
-        )
-
-
-    _coverage = pd.concat(
-        [
-            go_term_ic_nan_counts(mdF100_swiss).rename("mdF100"),
-            go_term_ic_nan_counts(dFseq_swiss).rename("dFseq"),
-        ],
-        axis=1,
-    )
-
-    _coverage
-    return
-
-
-@app.cell
-def _(mdF100_swiss, np, plt):
-    def go_term_ic_values(df):
-        return df.groupby("go_term")[["IC_cafa", "IC_swissprot"]].first().dropna()
-
-
-    _go_ic = go_term_ic_values(mdF100_swiss)
-
-    plt.figure(figsize=(7, 4))
-
-    bins = np.linspace(
-        min(_go_ic.min()),
-        max(_go_ic.max()),
-        50,  # <-- number of bins
-    )
-
-    plt.hist(
-        _go_ic["IC_cafa"],
-        bins=bins,
-        alpha=0.5,
-        density=True,
-        label="IC_cafa",
-    )
-
-    plt.hist(
-        _go_ic["IC_swissprot"],
-        bins=bins,
-        alpha=0.6,
-        density=True,
-        label="IC_swissprot",
-    )
-
-    plt.xlabel("Information Content (IC)")
-    plt.ylabel("Density")
-    plt.title("GO-term IC distribution (mdF100)")
-    plt.legend()
-
-    plt.tight_layout()
-    plt.show()
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    Systematic shifts in IC values
-    """)
-    return
-
-
-@app.cell
-def _(mdF100_swiss, plt):
-    def go_term_ic_table(df):
-        return (
-            df.groupby("go_term")[["IC_cafa", "IC_swissprot"]]
-            .first()
-            .dropna()  # keep only GO terms with both ICs
-        )
-
-
-    _go_ic = go_term_ic_table(mdF100_swiss)
-
-    go_ic_ranked = _go_ic.assign(
-        IC_cafa_rank=_go_ic["IC_cafa"].rank(ascending=True, pct=True).round(3),
-        IC_swissprot_rank=_go_ic["IC_swissprot"]
-        .rank(ascending=True, pct=True)
-        .round(3),
-    )
-
-
-    plt.figure(figsize=(6, 6))
-
-    plt.scatter(
-        go_ic_ranked["IC_cafa_rank"],
-        go_ic_ranked["IC_swissprot_rank"],
-        s=5,
-        alpha=0.3,
-    )
-
-    plt.plot([0, 1], [0, 1], linestyle="--")
-
-    plt.xlabel("IC_cafa rank (low → high specificity)")
-    plt.ylabel("IC_swissprot rank (low → high specificity)")
-    plt.title("GO-term specificity rank comparison (mdF100)")
-
-    plt.tight_layout()
-    plt.show()
-
-    # bonus, lets find a couple go-terms that drastically change ranks
-    _drastic = go_ic_ranked[
-        (go_ic_ranked["IC_cafa_rank"] < 0.2)
-        & (go_ic_ranked["IC_swissprot_rank"] > 0.8)
-    ]
-
-    len(_drastic)
-    _drastic.head(10)
-    return (go_term_ic_table,)
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    Systematic shifts in IC values, IC_cafa 0 removed
-    """)
-    return
-
-
-@app.cell
-def _(go_term_ic_table, mdF100_swiss, plt):
-    _go_ic = go_term_ic_table(mdF100_swiss.query("IC_cafa > 0"))
-
-    go_ic_ranked_non_zero = _go_ic.assign(
-        IC_cafa_rank=_go_ic["IC_cafa"].rank(ascending=True, pct=True).round(3),
-        IC_swissprot_rank=_go_ic["IC_swissprot"]
-        .rank(ascending=True, pct=True)
-        .round(3),
-    )
-
-    plt.figure(figsize=(6, 6))
-
-    plt.scatter(
-        go_ic_ranked_non_zero["IC_cafa_rank"],
-        go_ic_ranked_non_zero["IC_swissprot_rank"],
-        s=5,
-        alpha=0.3,
-    )
-
-    plt.plot([0, 1], [0, 1], linestyle="--")
-
-    plt.xlabel("IC_cafa rank (low → high specificity)")
-    plt.ylabel("IC_swissprot rank (low → high specificity)")
-    plt.title("GO-term specificity rank comparison (mdF100) for IC_cafa > 0")
-
-    plt.tight_layout()
-    plt.show()
-
-    # bonus, lets find a couple go-terms that drastically change ranks
-    _drastic = go_ic_ranked_non_zero[
-        (go_ic_ranked_non_zero["IC_cafa_rank"] < 0.2)
-        & (go_ic_ranked_non_zero["IC_swissprot_rank"] > 0.8)
-    ]
-
-    len(_drastic)
-    _drastic.head(10)
-    return
-
-
-@app.cell
-def _(mdF100_swiss):
-    mdF100_swiss.query("IC_cafa != 0")
-    return
-
-
-@app.cell
-def _(ic_df):
-    ic_df.query("IC > 0")["IC"].hist()
-    return
-
-
-@app.cell
-def _():
     return
 
 

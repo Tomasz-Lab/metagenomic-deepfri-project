@@ -9,6 +9,3 @@ $ uv sync
 
 To open the interactive notebooks:
 uv run marimo edit
-
-USalign was used to calculate the TM-scores.
-https://github.com/pylelab/USalign commit ad9850e
