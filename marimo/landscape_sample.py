@@ -13,9 +13,7 @@ def _():
 @app.cell
 def _(pd):
     # import landscape data (https://figshare.com/articles/dataset/Large_protein_databases_reveal_structural_complementarity_and_functional_locality/27203073?file=54271973)
-    coords = pd.read_parquet(
-        "~/2025/metagenomic_deepfri_old/landscape/data/coordinates.parquet"
-    )
+    coords = pd.read_parquet("data/external/coordinates.parquet")
     return (coords,)
 
 
@@ -105,18 +103,13 @@ def _(coords_1):
 
     afdb_s = sample_n(afdb_df, 50_000, seed=1 * 10 + 1)
     afdb_s.to_csv(f"data/source/sample_landscape_50k.csv")
-    return afdb_df, afdb_s
+    return (afdb_s,)
 
 
 @app.cell
 def _(afdb_s):
+    # final table of 50k proteins that go into the benchmark
     afdb_s
-    return
-
-
-@app.cell
-def _(afdb_df):
-    afdb_df
     return
 
 

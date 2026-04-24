@@ -12,29 +12,21 @@ def _():
     import matplotlib.style
     from upsetplot import from_contents, plot
     import importlib
-    import os
     import pandas as pd
     from goatools.obo_parser import GODag
     from pathlib import Path
     from scipy.stats import mannwhitneyu
-
-    PLOT_DIR = "plots"
-    RAW_DIR = os.path.join(PLOT_DIR, "raw_data")
-    os.makedirs(RAW_DIR, exist_ok=True)
 
     # save and display plots in whitemode
     matplotlib.style.use("default")
     return (
         GODag,
         Path,
-        PLOT_DIR,
-        RAW_DIR,
         from_contents,
         importlib,
         mannwhitneyu,
         mo,
         np,
-        os,
         pd,
         plot,
         plt,
@@ -117,9 +109,7 @@ def _(mo):
 
 @app.cell
 def _(Path):
-    BASE = Path(
-        "/home/FilipS/2025/metagenomic_deepfri/data/source/reference_proteomes/mdf_results"
-    )
+    BASE = Path("data/source/reference_proteomes/mdf_results")
 
     identity_bins = {
         "50": "identity_bin_0.00-0.50",
@@ -217,7 +207,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, cov_100, cov_50, cov_90, pd, plt):
+def _(cov_100, cov_50, cov_90, plt):
     def decompose_cov_percent(cov):
         total = cov["total_queries"]
 
@@ -245,9 +235,9 @@ def _(PLOT_DIR, RAW_DIR, cov_100, cov_50, cov_90, pd, plt):
 
         labels = [""]
 
-        _ax.bar(labels, [pdb], label="PDB hits")
-        _ax.bar(labels, [uni], bottom=[pdb], label="+UniProt hits")
-        _ax.bar(labels, [esm], bottom=[pdb + uni], label="+ESM hits")
+        _ax.bar(labels, [pdb], label="PDB100 hits")
+        _ax.bar(labels, [uni], bottom=[pdb], label="+AFDBv4 hits")
+        _ax.bar(labels, [esm], bottom=[pdb + uni], label="+ESM_clust hits")
         _ax.bar(labels, [no_hit], bottom=[pdb + uni + esm], label="No hit")
 
         _ax.set_title(title)
@@ -267,11 +257,13 @@ def _(PLOT_DIR, RAW_DIR, cov_100, cov_50, cov_90, pd, plt):
     )
 
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/composition_plot.svg", bbox_inches="tight")
-    pd.DataFrame([cov_50, cov_90, cov_100], index=["id50", "id90", "id100"]).to_csv(
-        f"{RAW_DIR}/composition_plot.csv"
-    )
+    plt.savefig("plots/reference_proteomes_hit_coverage.png")
     plt.show()
+    return
+
+
+@app.cell
+def _():
     return
 
 
@@ -339,7 +331,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
+def _(go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
     # define sources once: (key used in uniques/core, label on plot, dataframe)
     _sources = [
         ("go_terms50", "go_terms50", go_terms_50),
@@ -404,7 +396,6 @@ def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
         y=1.03,
     )
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/refinement_or_noise_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -418,7 +409,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
+def _(go_terms_100, go_terms_50, go_terms_90, plt):
     def counts_per_protein_aspect(df):
         """
         Returns a Series indexed by (Protein, aspect)
@@ -477,7 +468,6 @@ def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
         "Annotation number per protein by identity cutoff and GO aspect", y=1.03
     )
     plt.tight_layout()
-    fig.savefig(f"{PLOT_DIR}/annotations_per_protein_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -491,7 +481,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, go_terms_100, mannwhitneyu, np, plt):
+def _(go_terms_100, mannwhitneyu, np, plt):
     _score_cutoff = 0.2
     _bin_width = 3
     _min_n_for_test = 20
@@ -617,7 +607,6 @@ def _(PLOT_DIR, go_terms_100, mannwhitneyu, np, plt):
         y=1.01,
     )
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/predictions_vs_max_ic.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -631,7 +620,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
+def _(go_terms_100, go_terms_50, go_terms_90, plt):
     def ic_by_aspect(df, aspect):
         """
         Return a 1D Series of IC values for a given aspect
@@ -686,7 +675,6 @@ def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
         y=1.03,
     )
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/median_ic_per_protein_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -700,7 +688,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
+def _(go_terms_100, go_terms_50, go_terms_90, plt):
     def score_by_aspect(df, aspect):
         return (
             df.groupby(["Protein", "aspect"])["Score"]
@@ -754,7 +742,6 @@ def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt):
 
     _fig.suptitle("Per protein score", y=1.03)
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/median_score_per_protein_identity.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -768,7 +755,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
+def _(go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
     _sources = [
         ("go_terms_50", go_terms_50),
         ("go_terms_90", go_terms_90),
@@ -812,7 +799,6 @@ def _(PLOT_DIR, go_terms_100, go_terms_50, go_terms_90, plt, wang, wsh):
         y=1.03,
     )
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/cohesion_analysis.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -946,7 +932,7 @@ def _(mdF100_propped):
 
 
 @app.cell
-def _(PLOT_DIR, dFstruct_propped, gplot, mdF100_propped, plt):
+def _(dFstruct_propped, gplot, mdF100_propped, plt):
     per_prot, per_bin, stats = gplot.concordance_by_ic(
         mdF100_propped[0],
         dFstruct_propped[0],
@@ -976,7 +962,7 @@ def _(PLOT_DIR, dFstruct_propped, gplot, mdF100_propped, plt):
         _fig,
         per_prot,
         out_prefix="refprot_mdf_dfstr_concordance_by_ic",
-        out_dir=PLOT_DIR,
+        out_dir="plots",
     )
 
     plt.show()
@@ -992,13 +978,12 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
+def _(gplot, per_bin, per_prot, plt):
     _fig = gplot.plot_concordance_violin(
         per_prot,
         per_bin,
         title="Method concordance by IC bin",
     )
-    _fig.savefig(f"{PLOT_DIR}/refprot_concordance_violin.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -1024,7 +1009,7 @@ def _(dFseq):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, dFseq, dFstruct, mdF100, mdF90, pd, plt):
+def _(dFseq, dFstruct, mdF100, mdF90, pd, plt):
     _n_queries = 14895
 
 
@@ -1066,8 +1051,6 @@ def _(PLOT_DIR, RAW_DIR, dFseq, dFstruct, mdF100, mdF90, pd, plt):
     plt.ylabel("% of proteins with at least one GO term predicted")
     plt.title("Prediction coverage")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/prediction_coverage.svg", bbox_inches="tight")
-    _groups_df.to_csv(f"{RAW_DIR}/prediction_coverage.csv")
     plt.show()
     return
 
@@ -1182,12 +1165,7 @@ def _(plt):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
-def _(PLOT_DIR, RAW_DIR, dFstruct, mdF100, mdF50, mdF90, pd, venn_with_percentages):
+def _(dFstruct, mdF100, mdF50, mdF90, pd, venn_with_percentages):
     mdf_variants = {
         "50": mdF50,
         "90": mdF90,
@@ -1211,7 +1189,7 @@ def _(PLOT_DIR, RAW_DIR, dFstruct, mdF100, mdF50, mdF90, pd, venn_with_percentag
         membership_df["in_dfstruct"] = membership_df["pair"].isin(set_b)
         membership_df = membership_df.drop(columns="pair")
         membership_df.to_csv(
-            f"{RAW_DIR}/venn_diagram_mdf{suffix}_dfstruct.csv",
+            f"plots/raw_data/venn_diagram_mdf{suffix}_dfstruct.csv",
             index=False,
         )
 
@@ -1221,7 +1199,7 @@ def _(PLOT_DIR, RAW_DIR, dFstruct, mdF100, mdF50, mdF90, pd, venn_with_percentag
             label_a=f"Metagenomic-deepFRI",
             label_b="       deepFRI-structure",
             offset=0.05,
-            save_path=f"{PLOT_DIR}/venn_diagram_mdf{suffix}_dfstruct",
+            save_path=f"plots/venn_diagram_mdf{suffix}_dfstruct",
         )
     return (membership_df,)
 
@@ -1274,7 +1252,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
+def _(dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
     # define sources once: (key used in uniques/core, label on plot, dataframe)
     _sources = [
         ("seq", "dFseq", dFseq),
@@ -1340,7 +1318,6 @@ def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, plt, wang, wsh):
         y=1.03,
     )
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/refinement_or_noise_methods.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -1354,7 +1331,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, np, plt):
+def _(dFseq, dFstruct, mdF100, mdF90, np, plt):
     def _get_aspect_counts(counts_series, aspect):
         aspect_lower = str(aspect).lower()
         aspect_index = (
@@ -1450,7 +1427,6 @@ def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, np, plt):
 
     _fig.suptitle("Annotation number per protein by source and GO aspect", y=1.03)
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/annotations_per_protein_methods.svg", bbox_inches="tight")
     _fig
     return
 
@@ -1464,7 +1440,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF50, mdF90, plt):
+def _(dFseq, dFstruct, mdF100, mdF50, mdF90, plt):
     ic_dFseq = dFseq.groupby(["Protein", "Aspect"])["IC"].max()
     ic_dFstruct = dFstruct.groupby(["Protein", "Aspect"])["IC"].max()
     ic_mdF50 = mdF50.groupby(["Protein", "Aspect"])["IC"].max()
@@ -1544,7 +1520,6 @@ def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF50, mdF90, plt):
         y=1.03,
     )
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/max_ic_per_protein.svg", bbox_inches="tight")
     plt.show()
     return
 
@@ -1565,7 +1540,7 @@ def _(mdF100):
 
 
 @app.cell
-def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, np, plt):
+def _(dFseq, dFstruct, mdF100, mdF90, np, plt):
     def _get_aspect_counts(counts_series, aspect):
         aspect_lower = str(aspect).lower()
         aspect_index = (
@@ -1657,7 +1632,6 @@ def _(PLOT_DIR, dFseq, dFstruct, mdF100, mdF90, np, plt):
 
     _fig.suptitle("Median score per protein by source and GO aspect", y=1.03)
     plt.tight_layout()
-    _fig.savefig(f"{PLOT_DIR}/median_score_per_protein_methods.svg", bbox_inches="tight")
     _fig
     return
 

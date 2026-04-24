@@ -194,13 +194,6 @@ def _(GODag, pd):
     # information content from SwissProt
     ic_df = pd.read_csv("data/external/IC_swissprot.csv")
 
-    # new information content
-    """
-    ic_df = pd.read_csv("data/external/ic_swissprot_new.tsv", sep="\t")[
-        ["term", "corpus_ic"]
-    ].rename(columns={"term": "go_term", "corpus_ic": "IC"})
-    """
-
     obo = "data/external/go-basic-latest.obo"
 
     godag = GODag(
@@ -281,9 +274,7 @@ def _(mo):
 @app.cell
 def _(ic_df, pd, resolve_aspect):
     # sequence only deepFRI
-    dFseq = pd.read_csv(
-        "/home/FilipS/software/nextflow_deepfri/results/uhgp_50_mags/merged_predictions.csv"
-    )
+    dFseq = pd.read_csv("data/source/uhgp_mags/uhgp_50_mags/deepfri_seq_preds.csv")
     dFseq = dFseq.rename(columns={"GO_term/EC": "go_term"})
 
     dFseq = pd.merge(
@@ -305,18 +296,9 @@ def _(ic_df, pd, resolve_aspect):
 
     # EGGnog go-terms from MGY
     eggnog = pd.read_csv(
-        "/home/FilipS/2025/metagenomic_deepfri/data/source/uhgp_mags/uhgp_50_mags/merged.tsv",
+        "data/source/uhgp_mags/uhgp_50_mags/eggnog_merged.tsv",
         sep="\t",
     ).rename(columns={"#query": "Protein", "GOs": "go_term"})
-
-    """
-    # EGGnog self-calculated with ultra-sensitive diamond
-    eggnog = pd.read_csv(
-        "/home/FilipS/2025/metagenomic_deepfri/data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.emapper.annotations",
-        sep="\t",
-        skiprows=4,
-    ).rename(columns={"#query": "Protein", "GOs": "go_term"})
-    """
 
     eggnog_go = eggnog[["Protein", "go_term"]]
 
@@ -361,6 +343,12 @@ def _(ic_df, pd, resolve_aspect):
 
 @app.cell
 def _(deep_go):
+    deep_go["Protein"].nunique()
+    return
+
+
+@app.cell
+def _(deep_go):
     # Investigate NaNs
     _summary = deep_go.agg(
         n_rows=("IC", "size"),
@@ -395,9 +383,7 @@ def _(mo):
 
 @app.cell
 def _(Path, ic_df, pd):
-    _BASE = Path(
-        "/home/FilipS/software/mdeepfri_source/Metagenomic-DeepFRI/results/uhgp_50_mags"
-    )
+    _BASE = Path("data/source/uhgp_mags/uhgp_50_mags/mdeepfri_results")
 
     identity_bins = {
         "100": "identity_bin_0.00-1.01",
@@ -567,7 +553,9 @@ def _(PLOT_DIR, RAW_DIR, all_sequences, cov_100, pd, plt):
     plt.tight_layout()
 
     _fig.savefig(f"{PLOT_DIR}/structure_db_composition.svg", bbox_inches="tight")
-    pd.DataFrame([cov_100]).to_csv(f"{RAW_DIR}/structure_db_composition.csv", index=False)
+    pd.DataFrame([cov_100]).to_csv(
+        f"{RAW_DIR}/structure_db_composition.csv", index=False
+    )
 
     plt.show()
     return
@@ -848,7 +836,7 @@ def _(
         "#6fdc8c",  # deep_go
     ]
 
-    _fig, _ax = plt.subplots(figsize=(6, 5))
+    _fig, _ax = plt.subplots(figsize=(4, 5))
 
     bars = _ax.bar(
         _groups_df.index.astype(str),
@@ -870,7 +858,7 @@ def _(
         )
 
     _ax.set_xlabel("Prediction source", fontsize=14)
-    _ax.tick_params(axis="x", labelsize=14, rotation=30)
+    _ax.tick_params(axis="x", labelsize=14, rotation=90)
     _ax.tick_params(axis="y", labelsize=14, rotation=0)
 
     _ax.set_ylabel("% proteins with ≥ 1 prediction", fontsize=14)
@@ -879,7 +867,9 @@ def _(
 
     # Save
     _fig.savefig(f"{PLOT_DIR}/prediction_coverage.svg", bbox_inches="tight")
-    _fig.savefig(f"{PLOT_DIR}/prediction_coverage.pdf", bbox_inches="tight", dpi=300)
+    _fig.savefig(
+        f"{PLOT_DIR}/prediction_coverage.pdf", bbox_inches="tight", dpi=300
+    )
     _groups_df.to_csv(f"{RAW_DIR}/prediction_coverage.csv")
 
     plt.show()
@@ -927,7 +917,10 @@ def _(PLOT_DIR, dFseq, eggnog_go, from_contents, mdF100, plot, plt):
             sort_categories_by="input",
         )
         plt.suptitle(f"Overlap of Protein–GO term annotations ({aspect_label})")
-        fig.savefig(f"{PLOT_DIR}/goterm_overlap_upset_{aspect_label}.svg", bbox_inches="tight")
+        fig.savefig(
+            f"{PLOT_DIR}/goterm_overlap_upset_{aspect_label}.svg",
+            bbox_inches="tight",
+        )
         plt.show()
 
 
@@ -1587,7 +1580,7 @@ def _(
             _vp["cmedians"].set_linewidth(1.5)
 
             _ax.set_xticks(_positions)
-            _ax.set_xticklabels(_labels, rotation=30, ha="center", fontsize=14)
+            _ax.set_xticklabels(_labels, rotation=30, ha="center", fontsize=13)
 
             # median labels
             for _i, _vals in enumerate(_data, start=1):
@@ -1605,7 +1598,7 @@ def _(
 
             return _positions
 
-        fig, axes = plt.subplots(1, 3, figsize=(8, 5), sharey=True)
+        fig, axes = plt.subplots(1, 3, figsize=(5, 5), sharey=True)
 
         _labels = [n for n, _ in _sources]
         _colors = [_method_colors[n] for n in _labels]
@@ -1668,7 +1661,9 @@ def _(
         fig.subplots_adjust(
             left=0.08, right=0.99, bottom=0.25, top=0.98, wspace=0.10
         )
-        plt.savefig(f"{PLOT_DIR}/median_score_distribution.svg", format="svg", dpi=300)
+        plt.savefig(
+            f"{PLOT_DIR}/median_score_distribution.svg", format="svg", dpi=300
+        )
         plt.show()
 
 
@@ -1908,13 +1903,62 @@ def _(mo):
 @app.cell
 def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     _fig_faceted = gplot.plot_concordance_faceted(
-        per_prot, per_bin, figsize=(5, 5)
+        per_prot,
+        per_bin,
+        figsize=(5, 3),
+        aspects=["mf"],
+        x_bin_labels_as_interval=True,
+        x_bin_interval_labels_zero_origin=True,
     )
 
     gplot.save_concordance_artifacts(
         _fig_faceted,
         per_prot,
-        out_prefix="concordance_mdf_vs_eggnog_faceted",
+        out_prefix="concordance_mdf_vs_eggnog_faceted_MF",
+        out_dir=PLOT_DIR,
+    )
+
+    plt.show()
+    return
+
+
+@app.cell
+def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
+    _fig_faceted = gplot.plot_concordance_faceted(
+        per_prot,
+        per_bin,
+        figsize=(5, 3),
+        aspects=["bp"],
+        x_bin_labels_as_interval=True,
+        x_bin_interval_labels_zero_origin=True,
+    )
+
+    gplot.save_concordance_artifacts(
+        _fig_faceted,
+        per_prot,
+        out_prefix="concordance_mdf_vs_eggnog_faceted_BP",
+        out_dir=PLOT_DIR,
+    )
+
+    plt.show()
+    return
+
+
+@app.cell
+def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
+    _fig_faceted = gplot.plot_concordance_faceted(
+        per_prot,
+        per_bin,
+        figsize=(5, 3),
+        aspects=["cc"],
+        x_bin_labels_as_interval=True,
+        x_bin_interval_labels_zero_origin=True,
+    )
+
+    gplot.save_concordance_artifacts(
+        _fig_faceted,
+        per_prot,
+        out_prefix="concordance_mdf_vs_eggnog_faceted_CC",
         out_dir=PLOT_DIR,
     )
 

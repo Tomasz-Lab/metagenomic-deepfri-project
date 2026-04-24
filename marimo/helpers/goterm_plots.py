@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.transforms import blended_transform_factory
 
 Metric = Literal["jaccard", "overlap_min", "overlap_A", "overlap_B"]
 
@@ -873,6 +874,34 @@ def _bin_sort_key(label: str) -> Tuple[int, int]:
         return (0, 999999)
 
 
+def _ic_bin_to_interval_ticklabel(
+    ic_bin_str: str,
+    bin_width: float,
+    *,
+    display_lo_offset: float = 0.0,
+) -> str:
+    """
+    Map ``ic_bin`` string from :func:`_assign_ic_bins` to half-open interval text,
+    e.g. ``\"2\"`` → ``\"[2,3)\"`` (for *bin_width* = 1).  Overflow bins (``\"11+\"``)
+    are left unchanged.
+
+    *display_lo_offset* is subtracted from the parsed left edge before forming
+    ``[lo, hi)`` (used to show the first bin as ``[0, w)`` when bins are
+    1-based left-edge labels).
+    """
+    s = str(ic_bin_str).strip()
+    if s.endswith("+"):
+        return s
+    try:
+        lo = float(s) - float(display_lo_offset)
+    except ValueError:
+        return s
+    hi = lo + float(bin_width)
+    if bin_width == int(bin_width) and lo == int(lo) and hi == int(hi):
+        return f"[{int(lo)},{int(hi)})"
+    return f"[{lo},{hi})"
+
+
 def plot_concordance_heatmap(
     per_protein: pd.DataFrame,
     per_bin_summary: pd.DataFrame,
@@ -979,6 +1008,9 @@ def plot_concordance_faceted(
     strip_color: str = "grey",
     strip_alpha: float = 0.45,
     strip_size: float = 12,
+    x_bin_labels_as_interval: bool = False,
+    ic_bin_width: float = 1.0,
+    x_bin_interval_labels_zero_origin: bool = False,
 ) -> plt.Figure:
     """
     Vertically stacked violin+strip panels (one row per ontology).
@@ -988,6 +1020,20 @@ def plot_concordance_faceted(
     aspects : optional list of aspect codes to display, e.g. ``["bp"]``
         or ``["mf", "cc"]``.  ``None`` (default) shows all available
         aspects in canonical order (BP, MF, CC).
+
+    x_bin_labels_as_interval : if True, x tick labels use half-open IC ranges
+        (e.g. ``[2,3)``) instead of left-edge labels; overflow bins stay as ``N+``.
+        *ic_bin_width* must match the *bin_width* passed to :func:`concordance_by_ic`
+        (default 1.0).
+
+    x_bin_interval_labels_zero_origin : if True (only with interval labels),
+        subtract the smallest numeric bin edge in each panel so the first bin
+        reads ``[0, ic_bin_width)``, then ``[ic_bin_width, 2*ic_bin_width)``, etc.
+
+    If *aspects* is a one-element list (e.g. ``[\"bp\"]``), the y-axis label is
+    ``{ylabel}, BP ontology`` (with the short aspect name).  Otherwise
+    (including ``aspects=None``), each panel shows the aspect inside the axes,
+    slightly above concordance 1.0 so it clears the violin tops.
 
     For bins with N >= *min_n_violin* a violin is drawn to show
     distribution shape (important for bimodal / zero-inflated concordance).
@@ -1008,11 +1054,13 @@ def plot_concordance_faceted(
     if aspects is not None:
         requested = [a.lower() for a in aspects]
         aspects_sorted = sorted(requested, key=lambda x: aspect_order.get(x, 99))
+        ontology_on_yaxis = len(requested) == 1
     else:
         aspects_sorted = sorted(
             summ["_aspect_lc"].unique(),
             key=lambda x: aspect_order.get(x, 99),
         )
+        ontology_on_yaxis = False
     n_aspects = len(aspects_sorted)
 
     fig, axes = plt.subplots(
@@ -1079,33 +1127,59 @@ def plot_concordance_faceted(
             if 0 < len(vals) < min_n_violin:
                 ax.axvspan(pos - 0.4, pos + 0.4, color="0.93", zorder=0)
 
-        # Aspect label (top-left corner of each panel)
         label = aspect_labels.get(aspect, aspect.upper())
-        ax.text(
-            0.02, 0.95, label,
-            transform=ax.transAxes, ha="left", va="top",
-            fontsize=11, fontweight="bold",
-        )
 
         ax.set_ylim(-0.05, 1.08)
         ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
         ax.grid(axis="y", alpha=0.25, linewidth=0.6)
         ax.tick_params(axis="y", labelsize=9)
 
-        # ylabel only on the middle panel (or first if single)
+        # y-axis: ``{ylabel}, {aspect} ontology`` when a single *aspects* entry;
+        # otherwise ontology text inside the panel (data coords, just above 1.0).
         mid = n_aspects // 2
-        if ax_idx == mid:
-            ax.set_ylabel(ylabel, fontsize=10)
+        if ontology_on_yaxis:
+            ax.set_ylabel(f"{ylabel}, {label} ontology", fontsize=10)
         else:
-            ax.set_ylabel("")
+            trans_xy = blended_transform_factory(ax.transAxes, ax.transData)
+            ax.text(
+                0.02, 1.035, label,
+                transform=trans_xy, ha="left", va="bottom",
+                fontsize=11, fontweight="bold",
+            )
+            if ax_idx == mid:
+                ax.set_ylabel(ylabel, fontsize=10)
+            else:
+                ax.set_ylabel("")
 
         # x-axis labels and N counts on every panel (bins differ per aspect)
         ax.set_xticks(positions)
-        ax.set_xticklabels(bins, fontsize=9)
+        if x_bin_labels_as_interval:
+            offset = 0.0
+            if x_bin_interval_labels_zero_origin:
+                numeric_edges: List[float] = []
+                for b in bins:
+                    bs = str(b).strip()
+                    if bs.endswith("+"):
+                        continue
+                    try:
+                        numeric_edges.append(float(bs))
+                    except ValueError:
+                        continue
+                if numeric_edges:
+                    offset = min(numeric_edges)
+            tick_labels = [
+                _ic_bin_to_interval_ticklabel(
+                    b, ic_bin_width, display_lo_offset=offset,
+                )
+                for b in bins
+            ]
+        else:
+            tick_labels = bins
+        ax.set_xticklabels(tick_labels, fontsize=9)
         # N counts below each bin
         for i, (_, row) in enumerate(summ_asp.iterrows(), start=1):
             ax.text(
-                i, -0.14,
+                i, -0.09,
                 f"({int(row['N_proteins'])})",
                 ha="center", va="top", rotation=30,
                 fontsize=8, color="0.5",
@@ -1114,11 +1188,11 @@ def plot_concordance_faceted(
             )
         # xlabel only on the bottom panel to avoid clutter
         if ax_idx == n_aspects - 1:
-            ax.set_xlabel(xlabel, labelpad=18, fontsize=11)
+            ax.set_xlabel(xlabel, labelpad=22, fontsize=11)
         else:
             ax.set_xlabel("")
 
-    fig.subplots_adjust(hspace=0.42, bottom=0.08, top=0.96, left=0.14, right=0.97)
+    fig.subplots_adjust(hspace=0.42, bottom=0.1, top=0.96, left=0.14, right=0.97)
     if title:
         fig.suptitle(title, fontsize=13)
 
