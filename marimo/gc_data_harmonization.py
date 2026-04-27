@@ -295,9 +295,16 @@ def _(main_results_df):
 
 
 @app.cell
+def _():
+    ## TM-score calculation
+    ### Could take a very long time
+    return
+
+
+@app.cell
 def _(lru_cache, np, pd, re, subprocess):
     ### Calculate TM-scores ###
-    USALIGN_BIN = "/home/FilipS/software/USalign/USalign"
+    USALIGN_BIN = "/home/FilipS/software/USalign/USalign"  # please install https://github.com/pylelab/USalign
 
     _tm_regex = re.compile(r"TM-score\s*=\s*([0-9.]+)")
 
