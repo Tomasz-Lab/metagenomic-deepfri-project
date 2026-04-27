@@ -19,18 +19,13 @@ def _():
     import matplotlib.pyplot as plt
     import matplotlib.style
     import importlib
-    import os
     from matplotlib.colors import LogNorm
     import pandas as pd
     from pathlib import Path
 
-    PLOT_DIR = "plots"
-    RAW_DIR = os.path.join(PLOT_DIR, "raw_data")
-    os.makedirs(RAW_DIR, exist_ok=True)
-
     # save and display plots in whitemode
     matplotlib.style.use("default")
-    return LogNorm, Path, PLOT_DIR, RAW_DIR, importlib, mo, np, os, pd, plt
+    return LogNorm, Path, importlib, mo, np, pd, plt
 
 
 @app.cell
@@ -155,7 +150,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, full_results_df, np, pd, plt):
+def _(full_results_df, np, plt):
     # --- Filter raw data for gc = 2 and base metric ---
     _subset = full_results_df[["query", "fident", "pyopal_identity"]]
 
@@ -193,8 +188,6 @@ def _(PLOT_DIR, RAW_DIR, full_results_df, np, pd, plt):
     plt.title("Identity comparison")
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/pyopal_vs_mmseqs2_identity.svg", bbox_inches="tight")
-    _subset.to_csv(f"{RAW_DIR}/pyopal_vs_mmseqs2_identity.csv", index=False)
     plt.show()
     return
 
@@ -208,7 +201,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, full_results_df, pd, plt):
+def _(full_results_df, plt):
     # count unique queries per id_bin
     _counts = (
         full_results_df.groupby("id_bin_mmseqs2")["query"].nunique().reset_index()
@@ -230,8 +223,6 @@ def _(PLOT_DIR, RAW_DIR, full_results_df, pd, plt):
     plt.ylabel("% of all queries")
     plt.title("Succesful structure hits")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/group_size.svg", bbox_inches="tight")
-    _counts.to_csv(f"{RAW_DIR}/group_size.csv", index=False)
     plt.show()
     return
 
@@ -245,15 +236,16 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, Path, RAW_DIR, f1_long, np, pd, plt):
+def _(Path, f1_long, np, pd, plt):
     # -----------------------
     # Config
     # -----------------------
     _gc = 2
     _metric = "base"
     _out_prefix = "pyopal_vs_f1score"
-    _outdir = Path(PLOT_DIR)
-    _rawdir = Path(RAW_DIR)
+    _outdir = Path("plots")
+    _rawdir = _outdir / "raw_data"
+    _rawdir.mkdir(parents=True, exist_ok=True)
 
     _edges = np.linspace(0.0, 1.0, 11)  # 0.0, 0.1, ..., 1.0
     _labels = list(range(len(_edges) - 1))  # 0..9
@@ -417,9 +409,20 @@ def _(PLOT_DIR, Path, RAW_DIR, f1_long, np, pd, plt):
     ax.grid(alpha=0.3)
 
     # Save
-    fig.savefig(_outdir / f"{_out_prefix}.svg", format="svg", bbox_inches="tight")
-    fig.savefig(
-        _outdir / f"{_out_prefix}.pdf", format="pdf", bbox_inches="tight", dpi=300
+    plt.savefig(
+        _outdir / f"1C_{_out_prefix}.svg", format="svg", bbox_inches="tight"
+    )
+    plt.savefig(
+        _outdir / f"1C_{_out_prefix}.pdf",
+        format="pdf",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        _outdir / f"1C_{_out_prefix}.png",
+        format="png",
+        bbox_inches="tight",
+        dpi=300,
     )
 
     plt.show()
@@ -435,7 +438,7 @@ def _(mo):
 
 
 @app.cell
-def _(LogNorm, PLOT_DIR, RAW_DIR, f1_long, np, pd, plt):
+def _(LogNorm, f1_long, np, plt):
     # --- Filter raw data for gc = 2 and base metric ---
     _gc2_subset = f1_long[
         (f1_long["gc"] == 2) & (f1_long["metric"] == "base")
@@ -485,8 +488,6 @@ def _(LogNorm, PLOT_DIR, RAW_DIR, f1_long, np, pd, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/f1_vs_pyopal_heatmap.svg", bbox_inches="tight")
-    _gc2_subset[["pyopal_identity", "f1"]].to_csv(f"{RAW_DIR}/f1_vs_pyopal_heatmap.csv", index=False)
     plt.show()
     return
 
@@ -500,7 +501,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, f1_long, plt):
+def _(f1_long, plt):
     # --- Filter raw data for gc = 0 and base metric ---
     _gc0_subset = f1_long[
         (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
@@ -542,8 +543,6 @@ def _(PLOT_DIR, RAW_DIR, f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/f1_vs_tmscore_scatter.svg", bbox_inches="tight")
-    _gc0_subset[["tm_score", "f1"]].to_csv(f"{RAW_DIR}/f1_vs_tmscore_scatter.csv", index=False)
     plt.show()
     return
 
@@ -557,7 +556,7 @@ def _(mo):
 
 
 @app.cell
-def _(LogNorm, PLOT_DIR, RAW_DIR, f1_long, np, plt):
+def _(LogNorm, f1_long, np, plt):
     # --- Filter raw data for gc = 0 and base metric ---
     _gc0_subset = f1_long[
         (f1_long["gc"] == 0) & (f1_long["metric"] == "base")
@@ -602,8 +601,6 @@ def _(LogNorm, PLOT_DIR, RAW_DIR, f1_long, np, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/f1_vs_tmscore_heatmap.svg", bbox_inches="tight")
-    _gc0_subset[["tm_score", "f1"]].to_csv(f"{RAW_DIR}/f1_vs_tmscore_heatmap.csv", index=False)
     plt.show()
     return
 
@@ -617,7 +614,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, f1_long, plt):
+def _(f1_long, plt):
     # --- Filter raw data for gc = 2 and base metric ---
     gc0_subset_inh = f1_long[
         (f1_long["gc"] == 0) & (f1_long["metric"] == "inherited")
@@ -659,8 +656,6 @@ def _(PLOT_DIR, RAW_DIR, f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/inherited_f1_vs_tmscore.svg", bbox_inches="tight")
-    gc0_subset_inh[["tm_score", "f1"]].to_csv(f"{RAW_DIR}/inherited_f1_vs_tmscore.csv", index=False)
     plt.show()
     return
 
@@ -674,7 +669,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, f1_long, plt):
+def _(f1_long, plt):
     # --- Filter raw data for gc = 0 and base metric ---
     plt.figure(figsize=(5, 5))
 
@@ -714,8 +709,6 @@ def _(PLOT_DIR, RAW_DIR, f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/tmscore_vs_pyopal_scatter.svg", bbox_inches="tight")
-    _gc0_subset[["pyopal_identity", "tm_score"]].to_csv(f"{RAW_DIR}/tmscore_vs_pyopal_scatter.csv", index=False)
     plt.show()
     return
 
@@ -729,15 +722,16 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, Path, RAW_DIR, f1_long, np, pd, plt):
+def _(Path, f1_long, np, pd, plt):
     # -----------------------
     # Config
     # -----------------------
     _gc = 0
     _metric = "base"
     _out_prefix = "pyopal_identity_vs_tmscore"
-    _outdir = Path(PLOT_DIR)
-    _rawdir = Path(RAW_DIR)
+    _outdir = Path("plots")
+    _rawdir = _outdir / "raw_data"
+    _rawdir.mkdir(parents=True, exist_ok=True)
 
     _edges = np.linspace(0.0, 1.0, 11)  # 0.0, 0.1, ..., 1.0
     _labels = list(range(len(_edges) - 1))  # 0..9
@@ -896,7 +890,23 @@ def _(PLOT_DIR, Path, RAW_DIR, f1_long, np, pd, plt):
 
     _ax.grid(alpha=0.3)
 
-    _fig.savefig(_outdir / f"{_out_prefix}.svg", bbox_inches="tight", dpi=300)
+    # Save
+    plt.savefig(
+        _outdir / f"1B_{_out_prefix}.svg", format="svg", bbox_inches="tight"
+    )
+    plt.savefig(
+        _outdir / f"1B_{_out_prefix}.pdf",
+        format="pdf",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        _outdir / f"1B_{_out_prefix}.png",
+        format="png",
+        bbox_inches="tight",
+        dpi=300,
+    )
+
     plt.show()
     return
 
@@ -910,7 +920,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, bootstrap_ci, f1_long, plt):
+def _(bootstrap_ci, f1_long, plt):
     # --- filter synthetic only ---
     synthetic_bootstrapped = (
         f1_long[f1_long["metric"] == "synthetic"]
@@ -945,8 +955,26 @@ def _(PLOT_DIR, RAW_DIR, bootstrap_ci, f1_long, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/synthetic_f1_vs_pyopal.svg", bbox_inches="tight")
-    synthetic_bootstrapped.to_csv(f"{RAW_DIR}/synthetic_f1_vs_pyopal.csv", index=False)
+
+    # Save
+    plt.savefig(
+        f"plots/SF2_synthetic_contacts.svg",
+        format="svg",
+        bbox_inches="tight",
+    )
+    plt.savefig(
+        f"plots/SF2_synthetic_contacts.pdf",
+        format="pdf",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        f"plots/SF2_synthetic_contacts.png",
+        format="png",
+        bbox_inches="tight",
+        dpi=300,
+    )
+
     plt.show()
     return
 
@@ -960,7 +988,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, bootstrap_ci, f1_long, plt):
+def _(bootstrap_ci, f1_long, plt):
     # synthetic entries only
     all_identity_summary = (
         f1_long[f1_long["metric"] == "synthetic"]
@@ -993,8 +1021,6 @@ def _(PLOT_DIR, RAW_DIR, bootstrap_ci, f1_long, plt):
     plt.title("Global performance of gc on synthetic F1")
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/all_identity_gc_summary.svg", bbox_inches="tight")
-    all_identity_summary.to_csv(f"{RAW_DIR}/all_identity_gc_summary.csv", index=False)
     plt.show()
     return
 
@@ -1091,7 +1117,7 @@ def _(bootstrap_ci, full_results_df, gc_values, np, pd):
 
 
 @app.cell
-def _(PLOT_DIR, RAW_DIR, gap_ev_summary, np, plt):
+def _(gap_ev_summary, np, plt):
     plt.figure(figsize=(11, 5))
 
     for _gc in sorted(gap_ev_summary["gc"].unique()):
@@ -1107,8 +1133,6 @@ def _(PLOT_DIR, RAW_DIR, gap_ev_summary, np, plt):
     plt.grid(alpha=0.3)
     plt.legend(loc="center right")
     plt.tight_layout()
-    plt.savefig(f"{PLOT_DIR}/gap_size_vs_synthetic_f1.svg", bbox_inches="tight")
-    gap_ev_summary.to_csv(f"{RAW_DIR}/gap_size_vs_synthetic_f1.csv", index=False)
     plt.show()
     return
 

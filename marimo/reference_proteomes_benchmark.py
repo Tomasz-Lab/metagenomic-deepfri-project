@@ -257,7 +257,25 @@ def _(cov_100, cov_50, cov_90, plt):
     )
 
     plt.tight_layout()
-    plt.savefig("plots/reference_proteomes_hit_coverage.png")
+
+    plt.savefig(
+        "plots/SF3_reference_proteomes_hit_coverage.svg",
+        format="svg",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        "plots/SF3_reference_proteomes_hit_coverage.pdf",
+        format="pdf",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        "plots/SF3_reference_proteomes_hit_coverage.png",
+        format="png",
+        bbox_inches="tight",
+        dpi=300,
+    )
     plt.show()
     return
 
@@ -961,7 +979,7 @@ def _(dFstruct_propped, gplot, mdF100_propped, plt):
     gplot.save_concordance_artifacts(
         _fig,
         per_prot,
-        out_prefix="refprot_mdf_dfstr_concordance_by_ic",
+        out_prefix="SF6_refprot_mdf_dfstr_concordance_by_ic",
         out_dir="plots",
     )
 
@@ -1051,6 +1069,26 @@ def _(dFseq, dFstruct, mdF100, mdF90, pd, plt):
     plt.ylabel("% of proteins with at least one GO term predicted")
     plt.title("Prediction coverage")
     plt.tight_layout()
+
+    plt.savefig(
+        "plots/SF4_reference_proteomes_prediction_coverage.svg",
+        format="svg",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        "plots/SF4_reference_proteomes_prediction_coverage.pdf",
+        format="pdf",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        "plots/SF4_reference_proteomes_prediction_coverage.png",
+        format="png",
+        bbox_inches="tight",
+        dpi=300,
+    )
+
     plt.show()
     return
 
@@ -1159,6 +1197,7 @@ def _(plt):
         if save_path:
             _fig.savefig(f"{save_path}.svg", bbox_inches="tight")
             _fig.savefig(f"{save_path}.pdf", bbox_inches="tight", dpi=300)
+            _fig.savefig(f"{save_path}.png", bbox_inches="tight", dpi=300)
 
         plt.show()
     return (venn_with_percentages,)
@@ -1632,7 +1671,32 @@ def _(dFseq, dFstruct, mdF100, mdF90, np, plt):
 
     _fig.suptitle("Median score per protein by source and GO aspect", y=1.03)
     plt.tight_layout()
+
+    plt.savefig(
+        f"plots/SF7_median_score_ref_prot.svg",
+        format="svg",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        f"plots/SF7_median_score_ref_prot.pdf",
+        format="pdf",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        f"plots/SF7_median_score_ref_prot.png",
+        format="png",
+        bbox_inches="tight",
+        dpi=300,
+    )
+
     _fig
+    return
+
+
+@app.cell
+def _():
     return
 
 

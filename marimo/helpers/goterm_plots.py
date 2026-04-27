@@ -460,8 +460,10 @@ def save_concordance_artifacts(
     _out = Path(out_dir)
     _out.mkdir(parents=True, exist_ok=True)
 
-    # 1) Figure (vector)
+    # 1) Figure
     fig.savefig(_out / f"{out_prefix}.svg", format="svg", bbox_inches="tight")
+    fig.savefig(_out / f"{out_prefix}.pdf", format="pdf", bbox_inches="tight", dpi=300)
+    fig.savefig(_out / f"{out_prefix}.png", format="png", bbox_inches="tight", dpi=300)
 
     # 2) Source data (exact values underlying each box)
     _cols = [c for c in ["Protein", "ic_bin", "concordance", "IC"] if c in per_protein.columns]

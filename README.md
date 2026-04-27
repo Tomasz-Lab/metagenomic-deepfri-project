@@ -1,4 +1,4 @@
-Main raw data for the publication is present in the "data" directory on Zenodo. The full uncompressed data can take up to 100GB of space, the zip archive is ~5.4GB. 
+Main raw data for the publication is present in the "data" directory on Zenodo [10.5281/zenodo.19738140]. The full uncompressed data can take up to 100GB of space, the zip archive is ~5.4GB. 
 
 Marimo notebooks used for the data analysis are uploaded to: https://github.com/Tomasz-Lab/metagenomic-deepfri-project
 

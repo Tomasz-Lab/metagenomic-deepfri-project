@@ -552,7 +552,22 @@ def _(PLOT_DIR, RAW_DIR, all_sequences, cov_100, pd, plt):
 
     plt.tight_layout()
 
-    _fig.savefig(f"{PLOT_DIR}/structure_db_composition.svg", bbox_inches="tight")
+    plt.savefig(
+        f"{PLOT_DIR}/SF8_structure_db_composition.svg",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        f"{PLOT_DIR}/SF8_structure_db_composition.svg",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    plt.savefig(
+        f"{PLOT_DIR}/SF8_structure_db_composition.png",
+        bbox_inches="tight",
+        dpi=300,
+    )
+
     pd.DataFrame([cov_100]).to_csv(
         f"{RAW_DIR}/structure_db_composition.csv", index=False
     )
@@ -628,8 +643,14 @@ def _(PLOT_DIR, RAW_DIR, np, pd, plt, pyopal_100):
     plt.legend()
     plt.tight_layout()
 
-    _fig = plt.gcf()
-    _fig.savefig(f"{PLOT_DIR}/identity_coverage_curve.svg", bbox_inches="tight")
+    plt.savefig(f"{PLOT_DIR}/SF9_identity_coverage_curve.svg", bbox_inches="tight")
+    plt.savefig(
+        f"{PLOT_DIR}/SF9_identity_coverage_curve.pdf", bbox_inches="tight", dpi=300
+    )
+    plt.savefig(
+        f"{PLOT_DIR}/SF9_identity_coverage_curve.png", bbox_inches="tight", dpi=300
+    )
+
     pd.concat(
         [df.assign(db_name=name) for name, df in curves.items()], ignore_index=True
     ).to_csv(f"{RAW_DIR}/identity_coverage_curve.csv", index=False)
@@ -866,10 +887,14 @@ def _(
     _fig.tight_layout()
 
     # Save
-    _fig.savefig(f"{PLOT_DIR}/prediction_coverage.svg", bbox_inches="tight")
+    _fig.savefig(f"{PLOT_DIR}/2C_prediction_coverage.svg", bbox_inches="tight")
     _fig.savefig(
-        f"{PLOT_DIR}/prediction_coverage.pdf", bbox_inches="tight", dpi=300
+        f"{PLOT_DIR}/2C_prediction_coverage.pdf", bbox_inches="tight", dpi=300
     )
+    _fig.savefig(
+        f"{PLOT_DIR}/2C_prediction_coverage.png", bbox_inches="tight", dpi=300
+    )
+
     _groups_df.to_csv(f"{RAW_DIR}/prediction_coverage.csv")
 
     plt.show()
@@ -1289,7 +1314,13 @@ def _(
 
     fig.subplots_adjust(left=0.08, right=0.99, bottom=0.20, top=1, wspace=0.05)
 
-    plt.savefig(f"{PLOT_DIR}/max_ic_distribution.svg", format="svg")
+    plt.savefig(f"{PLOT_DIR}/2A_max_ic_distribution.svg", format="svg")
+    plt.savefig(
+        f"{PLOT_DIR}/2A_max_ic_distribution.pdf", bbox_inches="tight", dpi=300
+    )
+    plt.savefig(
+        f"{PLOT_DIR}/2A_max_ic_distribution.png", bbox_inches="tight", dpi=300
+    )
     plt.show()
     return
 
@@ -1662,7 +1693,13 @@ def _(
             left=0.08, right=0.99, bottom=0.25, top=0.98, wspace=0.10
         )
         plt.savefig(
-            f"{PLOT_DIR}/median_score_distribution.svg", format="svg", dpi=300
+            f"{PLOT_DIR}/2B_median_score_distribution.svg", format="svg", dpi=300
+        )
+        plt.savefig(
+            f"{PLOT_DIR}/2B_median_score_distribution.pdf", format="pdf", dpi=300
+        )
+        plt.savefig(
+            f"{PLOT_DIR}/2B_median_score_distribution.png", format="png", dpi=300
         )
         plt.show()
 
@@ -1914,7 +1951,7 @@ def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     gplot.save_concordance_artifacts(
         _fig_faceted,
         per_prot,
-        out_prefix="concordance_mdf_vs_eggnog_faceted_MF",
+        out_prefix="2D_concordance_mdf_vs_eggnog_faceted_MF",
         out_dir=PLOT_DIR,
     )
 
@@ -1936,7 +1973,7 @@ def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     gplot.save_concordance_artifacts(
         _fig_faceted,
         per_prot,
-        out_prefix="concordance_mdf_vs_eggnog_faceted_BP",
+        out_prefix="SF10_concordance_mdf_vs_eggnog_faceted_BP",
         out_dir=PLOT_DIR,
     )
 
@@ -1958,7 +1995,7 @@ def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     gplot.save_concordance_artifacts(
         _fig_faceted,
         per_prot,
-        out_prefix="concordance_mdf_vs_eggnog_faceted_CC",
+        out_prefix="SF11_concordance_mdf_vs_eggnog_faceted_CC",
         out_dir=PLOT_DIR,
     )
 
