@@ -66,6 +66,14 @@ def _(mo):
 
 
 @app.cell
+def _(mo):
+    mo.md(r"""
+    ## Investigate available metadata
+    """)
+    return
+
+
+@app.cell
 def _(pd):
     # load the metadata and choose high quality MAGs
     df = pd.read_csv("data/external/genomes-all_metadata.tsv", sep="\t")
