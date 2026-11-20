@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.25.2"
 app = marimo.App(width="medium")
 
 
@@ -75,13 +75,13 @@ def _(np, pd, th):
     ### pair-level table: identities, TM-score and contact scores at gc = 2 ###
     _keys = ["query", "target", "idbin"]
     _identity = pd.read_csv(
-        "data/generated/gc_benchmark_identity_definitions.csv"
+        "../data/generated/gc_benchmark_identity_definitions.csv"
     )
     _tm = pd.read_csv(
-        "data/generated/gc_benchmark_with_tm.csv",
+        "../data/generated/gc_benchmark_with_tm.csv",
         usecols=_keys + ["tm_score", "evalue"],
     )
-    _counts = pd.read_csv("data/generated/gc_benchmark_contact_counts.csv")
+    _counts = pd.read_csv("../data/generated/gc_benchmark_contact_counts.csv")
     df = (
         _identity.merge(_tm, on=_keys)
         .merge(_counts.query("gc == 2"), on=_keys)
@@ -275,7 +275,7 @@ def _(mo):
 def _(bin_labels, df, np, pd):
     ### best hit and any hit per identity bin (MMseqs2 reported identity) ###
     _search = pd.read_csv(
-        "data/source/landscape/mmseqs2_search/afdb_uniprot_v4_results.tsv",
+        "../data/source/landscape/mmseqs2_search/afdb_uniprot_v4_results.tsv",
         sep="\t",
         usecols=["query", "target", "fident"],
     ).query("query != target")
@@ -346,7 +346,7 @@ def _(bin_labels, df, np, pd):
     )
 
     _lengths = {}
-    with open("data/source/landscape/landscape_afdb_50k.fasta") as _f:
+    with open("../data/source/landscape/landscape_afdb_50k.fasta") as _f:
         for _line in _f:
             if _line.startswith(">"):
                 _name = _line[1:].split()[0]
@@ -624,7 +624,7 @@ def _(mo):
 @app.cell
 def _(pd, th):
     ### structure features and CATH classes of queries ###
-    _features = pd.read_csv("data/generated/landscape_structure_features.csv")
+    _features = pd.read_csv("../data/generated/landscape_structure_features.csv")
     query_features = (
         _features.query("kind == 'query'").drop(columns="kind").set_index("id")
     )
@@ -641,8 +641,8 @@ def _(pd, th):
     )
 
     # TED domains of queries and templates; CATH names from cath-names.txt
-    _domains = pd.read_csv("data/generated/landscape_ted_domains.csv")
-    _names = th.read_cath_names("/mnt/storage_10T/software/ted/cath-names.txt")
+    _domains = pd.read_csv("../data/generated/landscape_ted_domains.csv")
+    _names = th.read_cath_names("../data/external/cath-names.txt")
     query_cath = th.protein_cath(_domains, _names)
     return query_cath, query_features, template_features
 

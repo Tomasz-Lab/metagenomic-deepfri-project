@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.25.2"
 app = marimo.App(width="medium")
 
 
@@ -16,13 +16,13 @@ def _():
     from upsetplot import from_contents, UpSet, plot
     from goatools.obo_parser import GODag
     import os
-    from scipy.stats import mannwhitneyu
+    from scipy.stats import mannwhitneyu, spearmanr
 
     # save and display plots in whitemode
     matplotlib.style.use("default")
 
-    PLOT_DIR = "plots"
-    RAW_DIR = "plots/raw_data"
+    PLOT_DIR = "../plots"
+    RAW_DIR = "../plots/raw_data"
     os.makedirs(RAW_DIR, exist_ok=True)
     return (
         GODag,
@@ -37,6 +37,7 @@ def _():
         pd,
         plot,
         plt,
+        spearmanr,
     )
 
 
@@ -55,6 +56,14 @@ def _(importlib):
 
     importlib.reload(wsh)
     return
+
+
+@app.cell
+def _(importlib):
+    import helpers.twilight_helpers as th
+
+    importlib.reload(th)
+    return (th,)
 
 
 @app.cell(hide_code=True)
@@ -76,7 +85,7 @@ def _(mo):
 @app.cell
 def _(pd):
     # load the metadata and choose high quality MAGs
-    df = pd.read_csv("data/external/genomes-all_metadata.tsv", sep="\t")
+    df = pd.read_csv("../data/external/genomes-all_metadata.tsv", sep="\t")
     df_mags = df.query(
         "Genome_type=='MAG' & Completeness > 95 & Contamination < 1 & N_contigs < 100 & Genome==Species_rep"
     )
@@ -91,7 +100,7 @@ def _(pd):
     selected_genomes = (
         df_mags[df_mags["Species_rep"].isin(species_ids)]
         .groupby("Species_rep")
-        .apply(lambda x: x.sample(n=1))  # random genome for a selected species
+        .sample(n=1, random_state=42)  # one random genome per species
         .reset_index(drop=True)
     )
 
@@ -116,7 +125,7 @@ def _(pd):
     urls_df = pd.DataFrame(url_rows)
 
     # write wget script to download those files
-    with open("scripts/download_mgyg_50.sh", "w") as out:
+    with open("../scripts/download_mgyg_50.sh", "w") as out:
         out.write("#!/usr/bin/env bash\n\n")
         for sid in species_ids:
             sid_prefix = sid[:-2]
@@ -130,6 +139,12 @@ def _(pd):
                 f"wget -c '{eggnog_url}' -O ../data/source/uhgp_mags/uhgp_50_mags/{sid}_eggNOG.tsv\n"
             )
     return df, selected_genomes
+
+
+@app.cell
+def _(selected_genomes):
+    selected_genomes
+    return
 
 
 @app.cell
@@ -200,9 +215,9 @@ def _(GODag, pd):
     # ic_df = pd.read_csv("data/external/IA.txt", sep="\t", names=["go_term", "IC"])
 
     # information content from SwissProt
-    ic_df = pd.read_csv("data/external/IC_swissprot.csv")
+    ic_df = pd.read_csv("../data/external/IC_swissprot.csv")
 
-    obo = "data/external/go-basic-latest.obo"
+    obo = "../data/external/go-basic-latest.obo"
 
     godag = GODag(
         obo,
@@ -282,7 +297,7 @@ def _(mo):
 @app.cell
 def _(ic_df, pd, resolve_aspect):
     # sequence only deepFRI
-    dFseq = pd.read_csv("data/source/uhgp_mags/uhgp_50_mags/deepfri_seq_preds.csv")
+    dFseq = pd.read_csv("../data/source/uhgp_mags/uhgp_50_mags/deepfri_seq_preds.csv")
     dFseq = dFseq.rename(columns={"GO_term/EC": "go_term"})
 
     dFseq = pd.merge(
@@ -304,7 +319,7 @@ def _(ic_df, pd, resolve_aspect):
 
     # EGGnog go-terms from MGY
     eggnog = pd.read_csv(
-        "data/source/uhgp_mags/uhgp_50_mags/eggnog_merged.tsv",
+        "../data/source/uhgp_mags/uhgp_50_mags/eggnog_merged.tsv",
         sep="\t",
     ).rename(columns={"#query": "Protein", "GOs": "go_term"})
 
@@ -335,7 +350,7 @@ def _(ic_df, pd, resolve_aspect):
     # load deepgo predictions
 
     deep_go = pd.read_csv(
-        "data/source/uhgp_mags/uhgp_50_mags/deep_go_meta/uhgp_50_mags_preds_merged.tsv",
+        "../data/source/uhgp_mags/uhgp_50_mags/deep_go_meta/uhgp_50_mags_preds_merged.tsv",
         sep="\t",
     )
 
@@ -375,7 +390,7 @@ def _(deep_go):
 @app.cell
 def _():
     # calculate how many sequences we have
-    _original_fasta = "data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa"
+    _original_fasta = "../data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa"
     with open(_original_fasta) as _f:
         all_sequences = sum(1 for line in _f if line.startswith(">"))
     return (all_sequences,)
@@ -391,7 +406,7 @@ def _(mo):
 
 @app.cell
 def _(Path, ic_df, pd):
-    _BASE = Path("data/source/uhgp_mags/uhgp_50_mags/mdeepfri_results")
+    _BASE = Path("../data/source/uhgp_mags/uhgp_50_mags/mdeepfri_results")
 
     identity_bins = {
         "100": "identity_bin_0.00-1.01",
@@ -429,6 +444,7 @@ def _(Path, ic_df, pd):
         )
 
         return alignments, go
+
     return (load_alignment_sets,)
 
 
@@ -584,6 +600,18 @@ def _(PLOT_DIR, RAW_DIR, all_sequences, cov_100, pd, plt):
     return
 
 
+@app.cell
+def _(cov_100):
+    cov_100
+    return
+
+
+@app.cell
+def _(mdF100):
+    mdF100["Protein"].unique()
+    return
+
+
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
@@ -664,6 +692,147 @@ def _(PLOT_DIR, RAW_DIR, np, pd, plt, pyopal_100):
     ).to_csv(f"{RAW_DIR}/identity_coverage_curve.csv", index=False)
 
     plt.show()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Structural coverage and taxonomic novelty
+
+    Do MAGs from lineages far from well-studied bacteria get fewer structures, or more distant templates? Novelty is the first GTDB rank with a placeholder name (empty or alphanumeric, e.g. `g__CAG-485`, `s__Collinsella sp900540895`): named taxa have described type strains, placeholders mark uncultured lineages. The unit is the genome. An AFDB hit at ≥ 99% identity means a genome of the same species is already in UniProt, which sets the template identity of most proteins of that MAG.
+    """)
+    return
+
+
+@app.cell
+def _(selected_genomes):
+    selected_genomes
+    return
+
+
+@app.cell
+def _(extract_rank, mdF100, pd, pyopal_100, selected_genomes, spearmanr):
+    NOVELTY_ORDER = [
+        "named species",
+        "named genus",
+        "unnamed genus",
+        "unnamed family or above",
+    ]
+    _first_placeholder = {"s__": "named genus", "g__": "unnamed genus"}
+
+
+    def novelty(lineage):
+        for rank in ["p__", "c__", "o__", "f__", "g__", "s__"]:
+            name = extract_rank(lineage, rank)
+            if not name or any(c.isdigit() for c in name):
+                return _first_placeholder.get(rank, "unnamed family or above")
+        return "named species"
+
+
+    with open("../data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa") as _f:
+        _proteins = pd.Index(
+            [line[1:].split()[0] for line in _f if line.startswith(">")]
+        )
+    _hits = pd.DataFrame(
+        {db: d.set_index("query_name")["identity"] for db, d in pyopal_100.items()}
+    ).reindex(_proteins)
+    # template used for prediction: PDB first, then AFDB, then ESM
+    _template = (
+        mdF100.dropna(subset=["DB_name"])
+        .drop_duplicates("Protein")
+        .set_index("Protein")["Identity"]
+    )
+    _per_protein = pd.DataFrame(
+        {
+            "genome": _proteins.str.rsplit("_", n=1).str[0],
+            "structure": _hits.notna().any(axis=1),
+            "pdb": _hits["pdb100"].notna(),
+            "afdb_identical": _hits["afdb_v4"] >= 0.99,
+            "template_identity": _template,
+            "pdb_identity": _hits["pdb100"],
+        },
+        index=_proteins,
+    )
+    _lineage = selected_genomes.set_index("Genome")["Lineage"]
+    mag_novelty = (
+        _per_protein.groupby("genome")
+        .agg(
+            proteins=("structure", "size"),
+            structure_coverage=("structure", "mean"),
+            pdb_coverage=("pdb", "mean"),
+            template_identity=("template_identity", "median"),
+            pdb_identity=("pdb_identity", "median"),
+            afdb_identical=("afdb_identical", "mean"),
+        )
+        .assign(
+            phylum=_lineage.map(lambda x: extract_rank(x, "p__")),
+            genus=_lineage.map(lambda x: extract_rank(x, "g__")),
+            novelty=_lineage.map(novelty),
+        )
+    )
+
+    _metrics = [
+        "structure_coverage",
+        "pdb_coverage",
+        "template_identity",
+        "pdb_identity",
+        "afdb_identical",
+    ]
+    _rank = mag_novelty["novelty"].map(NOVELTY_ORDER.index)
+    _trend = [spearmanr(_rank, mag_novelty[m]) for m in _metrics]
+    novelty_summary = (
+        mag_novelty.groupby("novelty")[_metrics]
+        .median()
+        .loc[NOVELTY_ORDER]
+        .T.assign(
+            spearman_rho=[t.statistic for t in _trend],
+            p_value=[t.pvalue for t in _trend],
+        )
+        .round(3)
+        .assign(p_value=[float(f"{t.pvalue:.2g}") for t in _trend])
+    )
+    novelty_summary
+    novelty_summary
+    return NOVELTY_ORDER, mag_novelty
+
+
+@app.cell
+def _(NOVELTY_ORDER, PLOT_DIR, Path, RAW_DIR, mag_novelty, np, plt, th):
+    _out_prefix = "mag_structure_coverage_by_novelty"
+    _panels = {
+        "structure_coverage": "% proteins with a structure",
+        "pdb_coverage": "% proteins with a PDB template",
+        "template_identity": "Median template identity",
+        "pdb_identity": "Median PDB template identity",
+    }
+    _positions = np.arange(len(NOVELTY_ORDER))
+    _labels = [g.replace(" ", "\n", 1) for g in NOVELTY_ORDER]
+
+    _fig, _axes = plt.subplots(2, 2, figsize=(12, 10))
+    for _ax, (_metric, _ylabel) in zip(_axes.flat, _panels.items()):
+        _scale = 100 if _metric.endswith("coverage") else 1
+        th.binned_boxplot(
+            _ax,
+            [
+                mag_novelty.loc[mag_novelty["novelty"] == g, _metric] * _scale
+                for g in NOVELTY_ORDER
+            ],
+            _positions,
+            _labels,
+            "#1192e8",
+            width=0.5,
+            rotation=0,
+            counts_y=-0.17,
+        )
+        _ax.set_xlim(-0.6, len(NOVELTY_ORDER) - 0.4)
+        _ax.set_ylabel(_ylabel, fontsize=14)
+
+    _fig.supxlabel("Taxonomic novelty (GTDB names)", fontsize=14)
+    _fig.tight_layout(h_pad=3)
+    th.save_figure(_fig, Path(PLOT_DIR), _out_prefix)
+    mag_novelty.to_csv(f"{RAW_DIR}/{_out_prefix}.csv")
+    _fig
     return
 
 
@@ -813,6 +982,7 @@ def _(pd):
 
     def count_meaningful_eggnog_rows(df: pd.DataFrame) -> int:
         return int(filter_meaningful_eggnog_rows(df).shape[0])
+
     return (count_meaningful_eggnog_rows,)
 
 
@@ -1123,6 +1293,7 @@ def _():
             fontsize=6,
             clip_on=False,
         )
+
     return add_sig_bracket_axes, p_to_stars
 
 
@@ -1786,7 +1957,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="go_term",
         score_col="Score",
-        obo_path="data/external/go-basic-latest.obo",
+        obo_path="../data/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -1795,7 +1966,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         score_min=0.3,  # drop low-score annotations first
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering to only include dF predictable terms
-        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
     )
 
     dFseq_propped = prop.propagate_go_annotations(
@@ -1803,7 +1974,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="go_term",
         score_col="Score",
-        obo_path="data/external/go-basic-latest.obo",
+        obo_path="../data/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -1818,7 +1989,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="go_term",
         score_col=None,
-        obo_path="data/external/go-basic-latest.obo",
+        obo_path="../data/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -1826,7 +1997,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         obsolete_prefer="replaced_by",
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering
-        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
     )
 
     deepgo_propped = prop.propagate_go_annotations(
@@ -1834,7 +2005,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="go_term",
         score_col="Score",
-        obo_path="data/external/go-basic-latest.obo",
+        obo_path="../data/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -1843,7 +2014,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         score_min=0.3,
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering
-        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
     )
     return dFseq_propped, deepgo_propped, eggnog_propped, mdf_propped
 
@@ -1917,7 +2088,7 @@ def _(PLOT_DIR, eggnog_propped, gplot, mdf_propped, plt):
         require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
         by_aspect=True,
         filter_predictable_terms=False,  # Filtering of predictable terms (REMOVES ALSO PROPAGATED TERMS)
-        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
     )
 
     _fig = gplot.plot_concordance_boxplot(
@@ -1935,6 +2106,504 @@ def _(PLOT_DIR, eggnog_propped, gplot, mdf_propped, plt):
 
     plt.show()
     return per_bin, per_prot
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Concordance-coverage analysis
+    """)
+    return
+
+
+@app.cell
+def _(all_sequences, eggnog_propped, ic_df, mdF100, np, pd, plt, prop):
+    _mdf, _ = prop.propagate_go_annotations(
+        mdF100,
+        protein_col="Protein",
+        term_col="go_term",
+        score_col="Score",
+        obo_path="../data/external/go-basic-latest.obo",
+        ic_df=ic_df,
+        relations=("is_a",),
+        exclude_roots=True,
+        obsolete_mode="drop",
+        obsolete_prefer="replaced_by",
+        score_min=0.1,
+        round_decimals=3,
+        filter_predictable_terms=True,
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
+    )
+
+    # Terms with no IC are kept. concordance_by_ic would drop them.
+    _mdf_terms = (
+        _mdf.dropna(subset=["Protein", "GO_term", "Aspect", "Score"])
+        .assign(Aspect=lambda d: d["Aspect"].str.lower())
+        .groupby(["Protein", "GO_term", "Aspect"], as_index=False)["Score"]
+        .max()
+    )
+    _egg = (
+        eggnog_propped[0]
+        .dropna(subset=["Protein", "GO_term", "Aspect"])
+        .assign(Aspect=lambda d: d["Aspect"].str.lower())
+        [["Protein", "GO_term", "Aspect"]]
+        .drop_duplicates()
+    )
+    # Coverage uses the raw mdF calls, same base as the 2C bar, split by aspect.
+    _raw = mdF100.loc[
+        mdF100["go_term"].notna() & (mdF100["go_term"] != "-"),
+        ["Protein", "Score", "aspect"],
+    ].assign(aspect=lambda d: d["aspect"].str.lower())
+
+    _aspects = ("bp", "mf", "cc")
+    _thresholds = np.round(np.arange(0.1, 0.51, 0.05), 2)
+    _rows = []
+    for _aspect in _aspects:
+        _egg_a = _egg.loc[_egg["Aspect"] == _aspect, ["Protein", "GO_term"]]
+        _egg_proteins = set(_egg_a["Protein"])
+        _raw_a = _raw.loc[_raw["aspect"] == _aspect]
+        for _t in _thresholds:
+            # Only mdF terms in an aspect eggNOG also annotates for that protein.
+            _m = _mdf_terms.loc[
+                (_mdf_terms["Aspect"] == _aspect) & (_mdf_terms["Score"] >= _t),
+                ["Protein", "GO_term"],
+            ]
+            _m = _m[_m["Protein"].isin(_egg_proteins)]
+            _n_mdf = _m.groupby("Protein").size()
+            _n_shared = (
+                _m.merge(_egg_a, on=["Protein", "GO_term"], how="inner")
+                .groupby("Protein")
+                .size()
+            )
+            _frac = _n_shared.reindex(_n_mdf.index).fillna(0) / _n_mdf
+            _n_covered = int(_raw_a.loc[_raw_a["Score"] >= _t, "Protein"].nunique())
+            _rows.append(
+                {
+                    "aspect": _aspect,
+                    "score_min": float(_t),
+                    "median_concordance": _frac.median(),
+                    "n_proteins_compared": int(len(_frac)),
+                    "n_proteins": _n_covered,
+                    "coverage": _n_covered / all_sequences,
+                }
+            )
+    score_calibration = pd.DataFrame(_rows)
+
+    _fig, _axes = plt.subplots(1, 3, figsize=(10, 3.6), sharey=True, layout="constrained")
+    for _ax, _aspect, _title in zip(_axes, _aspects, ("BP", "MF", "CC")):
+        _d = score_calibration[score_calibration["aspect"] == _aspect]
+        _ax.plot(
+            _d["score_min"],
+            _d["median_concordance"],
+            marker="o",
+            color="#eb6834",
+            label="mdF terms also in eggNOG" if _ax is _axes[0] else None,
+        )
+        _ax.plot(
+            _d["score_min"],
+            _d["coverage"],
+            marker="o",
+            color="#2a78d6",
+            label="MAG proteins with ≥ 1 GO term in this subontoogy" if _ax is _axes[0] else None,
+        )
+        _ax.set_title(_title, loc="left", fontsize=10)
+        _ax.set_xlabel("mdF score threshold")
+        _ax.set_xlim(0.08, 0.52)
+        _ax.set_ylim(0, 1.05)
+    _axes[0].set_ylabel("fraction")
+    _fig.legend(frameon=False, loc="outside upper center", ncol=2)
+    _fig
+    return (score_calibration,)
+
+
+@app.cell
+def _(score_calibration):
+    score_calibration
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Score calibration on a SwissProt temporal holdout
+
+    Which mdF score threshold agrees best with experimental annotations when the structural template is a remote homolog?
+
+    - **Test set**: Bacteria and Archaea proteins that entered SwissProt after DeepFRI v1.0 was trained (UniProtKB 2019_06), 60-1000 aa, with experimental GO terms, clustered at 50% identity over 80% coverage (`scripts/swissprot_calibration_prepare.sh`).
+    - **mdF run**: v1.0 weights, templates below 50% sequence identity only (`scripts/swissprot_calibration_mdf.sbatch`). Only proteins that got a template, and were therefore predicted by the GCN, are evaluated.
+    - **Thresholds** start at 0.1, the lowest score mdF writes to `results.tsv`.
+    - **All**: the fourth panel of every figure pools the BP, MF and CC terms of a protein into one mdF set and one experimental set, which gives one score threshold for the whole protein. As in the three other panels, a protein is scored only in the subontologies in which it has experimental terms: a subontology without experimental terms is unannotated, not known to be empty.
+    """)
+    return
+
+
+@app.cell
+def _():
+    import tempfile
+
+    import polars as pl
+    from cafaeval.evaluation import cafa_eval
+
+    return cafa_eval, pl, tempfile
+
+
+@app.cell
+def _(mo, pl):
+    _DIR = "../data/source/swissprot_calibration"
+    _RUN = f"{_DIR}/mdf/identity_bin_0.00-0.50/generate_contacts_2"
+
+    # Queries with a template ("aligned") are the ones predicted by the GCN.
+    _queries = pl.read_csv(f"{_RUN}/alignment_summary.tsv", separator="\t")
+    _gcn_proteins = _queries.filter(pl.col("aligned"))["query_id"].to_list()
+
+    # aspect: the subontology of a term (BP, MF or CC)
+    _MODES = {
+        "GO Biological Process": "BP",
+        "GO Molecular Function": "MF",
+        "GO Cellular Component": "CC",
+    }
+    swissprot_mdf = (
+        pl.read_csv(f"{_RUN}/results.tsv", separator="\t")
+        .filter(pl.col("protein").is_in(_gcn_proteins))
+        .select(
+            "protein",
+            "go_term",
+            "score",
+            aspect=pl.col("prediction_mode").replace_strict(_MODES),
+        )
+    )
+    swissprot_truth = (
+        pl.read_csv(f"{_DIR}/holdout_go.tsv", separator="\t")
+        .filter(pl.col("protein").is_in(_gcn_proteins))
+        .select("protein", "go_term", "aspect")
+    )
+    mo.md(
+        f"{len(_gcn_proteins)} of {_queries.height} test proteins got a template "
+        "and are evaluated."
+    )
+    return swissprot_mdf, swissprot_truth
+
+
+@app.cell
+def _(pl, plt):
+    def plot_score_calibration(curves, metrics, ylabel):
+        """Plot metrics against the mdF score threshold, one panel per
+        subontology and one for all subontologies together, and mark the
+        maximum of every metric.
+
+        curves: polars DataFrame with the columns aspect, threshold, coverage,
+            n_proteins and one column per metric.
+        metrics: {column: (legend label, colour)}.
+        """
+        fig, axes = plt.subplots(
+            1, 4, figsize=(13, 3.6), sharey=True, layout="constrained"
+        )
+        for ax, aspect in zip(axes, ("BP", "MF", "CC", "All")):
+            panel = curves.filter(pl.col("aspect") == aspect).sort("threshold")
+            ax.plot(
+                panel["threshold"],
+                panel["coverage"],
+                color="#898781",
+                linewidth=1,
+                label="proteins with ≥ 1 mdF term",
+            )
+            for row, (column, (label, colour)) in enumerate(metrics.items()):
+                ax.plot(
+                    panel["threshold"],
+                    panel[column],
+                    color=colour,
+                    linewidth=2,
+                    label=label,
+                )
+                best = panel.row(panel[column].arg_max(), named=True)
+                ax.plot(
+                    best["threshold"],
+                    best[column],
+                    "o",
+                    color=colour,
+                    markersize=8,
+                    markeredgecolor="white",
+                    markeredgewidth=2,
+                )
+                # The maximum is written in the upper right corner, which no
+                # curve reaches, next to a marker in the colour of its curve.
+                key_y = 0.93 - 0.08 * row
+                ax.plot(
+                    0.30, key_y, "o", color=colour, markersize=5, transform=ax.transAxes
+                )
+                ax.text(
+                    0.35,
+                    key_y,
+                    f"Metric max {best[column]:.2f} at score ≥ {best['threshold']:.2f}",
+                    transform=ax.transAxes,
+                    va="center",
+                    fontsize=8,
+                )
+            ax.set_title(
+                f"{aspect}, {panel['n_proteins'][0]} proteins", loc="left", fontsize=10
+            )
+            ax.set_xlabel("mdF score threshold")
+            ax.set_xlim(0.08, 1.0)
+            ax.set_ylim(0, 1.05)
+        axes[0].set_ylabel(ylabel)
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(
+            handles, labels, frameon=False, loc="outside upper center", ncol=len(labels)
+        )
+        return fig
+
+    return (plot_score_calibration,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    #### CAFA Fmax
+
+    Official CAFA evaluator (`cafaeval`): predictions and experimental terms are propagated over `is_a` and `part_of`, precision is averaged over proteins with at least one prediction and recall over all proteins with experimental terms. Root terms are left out.
+
+    The evaluator scores every GO namespace separately. For the **All** panel it runs a second time on a copy of the ontology in which all terms share one namespace, with the mdF terms limited to the subontologies in which the protein has experimental terms.
+    """)
+    return
+
+
+@app.cell
+def _(
+    Path,
+    RAW_DIR,
+    cafa_eval,
+    godag,
+    pl,
+    swissprot_mdf,
+    swissprot_truth,
+    tempfile,
+):
+    # The evaluator reads a ground-truth file and a folder of prediction files.
+    _OBO = "../data/external/go-basic-latest.obo"
+    _DIR = Path("../data/generated/swissprot_calibration")
+    (_DIR / "predictions").mkdir(parents=True, exist_ok=True)
+    swissprot_truth.select("protein", "go_term").write_csv(
+        _DIR / "ground_truth.tsv", separator="\t", include_header=False
+    )
+    swissprot_mdf.select("protein", "go_term", "score").write_csv(
+        _DIR / "predictions" / "mdf_gcn.tsv", separator="\t", include_header=False
+    )
+
+    # no_orphans=True leaves the root terms out of the evaluation.
+    _evaluation, _ = cafa_eval(
+        _OBO,
+        str(_DIR / "predictions"),
+        str(_DIR / "ground_truth.tsv"),
+        no_orphans=True,
+    )
+
+    # All subontologies together. The evaluator scores every GO namespace
+    # separately, so it runs a second time on a copy of the ontology in which
+    # all terms share one namespace: the BP, MF and CC terms of a protein are
+    # then scored as one set. As in the separate panels, a protein is scored
+    # only in the subontologies in which it has experimental terms. Terms that
+    # are obsolete or missing from this GO release do not count, because the
+    # evaluator drops them.
+    _current_terms = [go_id for go_id, term in godag.items() if not term.is_obsolete]
+    _annotated = (
+        swissprot_truth.filter(pl.col("go_term").is_in(_current_terms))
+        .select("protein", "aspect")
+        .unique()
+    )
+    with tempfile.TemporaryDirectory() as _tmp:
+        with open(_OBO) as _ontology, open(f"{_tmp}/go.obo", "w") as _copy:
+            for _line in _ontology:
+                _is_namespace = _line.startswith("namespace: ")
+                _copy.write("namespace: all\n" if _is_namespace else _line)
+        Path(_tmp, "predictions").mkdir()
+        (
+            swissprot_mdf.join(_annotated, on=["protein", "aspect"], how="semi")
+            .select("protein", "go_term", "score")
+            .write_csv(
+                f"{_tmp}/predictions/mdf_gcn.tsv",
+                separator="\t",
+                include_header=False,
+            )
+        )
+        _evaluation_all, _ = cafa_eval(
+            f"{_tmp}/go.obo",
+            f"{_tmp}/predictions",
+            str(_DIR / "ground_truth.tsv"),
+            no_orphans=True,
+        )
+
+    _ASPECTS = {
+        "biological_process": "BP",
+        "molecular_function": "MF",
+        "cellular_component": "CC",
+        "all": "All",
+    }
+    swissprot_fmax = (
+        pl.concat(
+            [
+                pl.from_pandas(_table.reset_index())
+                for _table in (_evaluation, _evaluation_all)
+            ]
+        )
+        .select(
+            aspect=pl.col("ns").replace_strict(_ASPECTS),
+            threshold=pl.col("tau").round(2),
+            precision=pl.col("pr"),
+            recall=pl.col("rc"),
+            f_measure=pl.col("f"),
+            coverage=pl.col("cov"),
+            # proteins with experimental terms = proteins with a prediction / coverage
+            n_proteins=(pl.col("n") / pl.col("cov")).round().cast(pl.Int64),
+        )
+        .filter(pl.col("threshold") >= 0.1)
+        .sort("aspect", "threshold")
+    )
+    swissprot_fmax.write_csv(f"{RAW_DIR}/swissprot_calibration_fmax.csv")
+
+    # Fmax: the threshold with the highest F-measure in every panel.
+    swissprot_fmax.filter(
+        pl.col("f_measure") == pl.col("f_measure").max().over("aspect")
+    )
+    return (swissprot_fmax,)
+
+
+@app.cell
+def _(PLOT_DIR, plot_score_calibration, swissprot_fmax):
+    _fig = plot_score_calibration(
+        swissprot_fmax,
+        metrics={"precision": ("precision", "#ed930c")},
+        ylabel="precision, coverage",
+    )
+    for _format in ("svg", "pdf", "png"):
+        _fig.savefig(
+            f"{PLOT_DIR}/swissprot_calibration_precision.{_format}",
+            bbox_inches="tight",
+            dpi=300,
+        )
+    _fig
+    return
+
+
+@app.cell
+def _(PLOT_DIR, plot_score_calibration, swissprot_fmax):
+    _fig = plot_score_calibration(
+        swissprot_fmax,
+        metrics={"f_measure": ("F1-score", "#2a78d6")},
+        ylabel="F1-score, coverage",
+    )
+    for _format in ("svg", "pdf", "png"):
+        _fig.savefig(
+            f"{PLOT_DIR}/swissprot_calibration_fmax.{_format}",
+            bbox_inches="tight",
+            dpi=300,
+        )
+    _fig
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    #### Jaccard concordance
+
+    Per protein and subontology, with P the mdF terms at a score threshold and T the experimental terms (both propagated over `is_a`, roots excluded, as in the rest of this notebook):
+
+    - **Jaccard** = |P ∩ T| / |P ∪ T|, averaged over all proteins with experimental terms (0 for a protein without mdF terms at that threshold).
+    - **mdF-normalised** = |P ∩ T| / |P|, the share of mdF terms that SwissProt confirms, averaged over proteins with at least one mdF term at that threshold.
+
+    For the **All** panel the terms of a protein are pooled over the subontologies in which it has experimental terms.
+    """)
+    return
+
+
+@app.cell
+def _(RAW_DIR, pl, prop, swissprot_mdf, swissprot_truth):
+    _propagator = prop.GOPropagator(
+        "../data/external/go-basic-latest.obo",
+        relations=("is_a",),
+        exclude_roots=True,
+    )
+    _truth, _ = _propagator.propagate(swissprot_truth, score_col=None)
+    # An ancestor gets the highest score of its predicted descendants.
+    _mdf, _ = _propagator.propagate(swissprot_mdf, round_decimals=None)
+    _mdf = _mdf.join(
+        _truth.select("protein", "go_term", in_truth=pl.lit(True)),
+        on=["protein", "go_term"],
+        how="left",
+    ).with_columns(pl.col("in_truth").fill_null(False))
+
+    # Number of mdF terms, and of mdF terms found in SwissProt, at every threshold.
+    _thresholds = pl.DataFrame({"threshold": [t / 100 for t in range(10, 100)]})
+    _mdf_counts = (
+        _mdf.join(_thresholds, how="cross")
+        .filter(pl.col("score") >= pl.col("threshold"))
+        .group_by("protein", "aspect", "threshold")
+        .agg(n_mdf=pl.len(), n_shared=pl.col("in_truth").sum())
+    )
+    # One row per threshold for every protein and subontology with experimental
+    # terms, also where mdF predicts nothing.
+    _counts = (
+        _truth.group_by("protein", "aspect")
+        .agg(n_truth=pl.len())
+        .join(_thresholds, how="cross")
+        .join(_mdf_counts, on=["protein", "aspect", "threshold"], how="left")
+        .with_columns(
+            pl.col("n_mdf", "n_shared").fill_null(0),
+            pl.col("aspect").str.to_uppercase(),
+        )
+    )
+    # All subontologies together: the terms of a protein are pooled over the
+    # subontologies in which it has experimental terms.
+    _pooled = (
+        _counts.group_by("protein", "threshold")
+        .agg(pl.col("n_truth", "n_mdf", "n_shared").sum())
+        .with_columns(aspect=pl.lit("All"))
+    )
+    _per_protein = pl.concat([_counts, _pooled], how="diagonal").with_columns(
+        jaccard=pl.col("n_shared")
+        / (pl.col("n_mdf") + pl.col("n_truth") - pl.col("n_shared")),
+        # undefined (null) for a protein without mdF terms at this threshold
+        mdf_normalised=pl.when(pl.col("n_mdf") > 0).then(
+            pl.col("n_shared") / pl.col("n_mdf")
+        ),
+    )
+    swissprot_concordance = (
+        _per_protein.group_by("aspect", "threshold")
+        .agg(
+            jaccard=pl.col("jaccard").mean(),
+            mdf_normalised=pl.col("mdf_normalised").mean(),
+            coverage=(pl.col("n_mdf") > 0).mean(),
+            n_proteins=pl.len(),
+        )
+        .sort("aspect", "threshold")
+    )
+    swissprot_concordance.write_csv(f"{RAW_DIR}/swissprot_calibration_jaccard.csv")
+
+    # The threshold with the highest Jaccard concordance in every panel.
+    swissprot_concordance.filter(
+        pl.col("jaccard") == pl.col("jaccard").max().over("aspect")
+    )
+    return (swissprot_concordance,)
+
+
+@app.cell
+def _(PLOT_DIR, plot_score_calibration, swissprot_concordance):
+    _fig = plot_score_calibration(
+        swissprot_concordance,
+        metrics={
+            "jaccard": ("Jaccard, maximum marked", "#2a78d6"),
+            "mdf_normalised": ("mdF terms confirmed by SwissProt", "#eb6834"),
+        },
+        ylabel="concordance, coverage",
+    )
+    for _format in ("svg", "pdf", "png"):
+        _fig.savefig(
+            f"{PLOT_DIR}/swissprot_calibration_jaccard.{_format}",
+            bbox_inches="tight",
+            dpi=300,
+        )
+    _fig
+    return
 
 
 @app.cell(hide_code=True)

@@ -414,7 +414,7 @@ def _plot_single_boxplot(
     else:
         boxplot_kwargs["medianprops"] = dict(color="red", linewidth=2.5)
     
-    bp = ax.boxplot(data, labels=bins, **boxplot_kwargs)
+    bp = ax.boxplot(data, tick_labels=bins, **boxplot_kwargs)
 
     if aspect_label:
         ax.set_title(aspect_label, fontsize=12, fontweight="bold", pad=10)
@@ -785,7 +785,7 @@ def plot_concordance_split_axis(
     ax_lower = fig.add_subplot(gs[1])
     
     # Upper plot: full range (0-1), focus on values >= split_threshold
-    bp_upper = ax_upper.boxplot(data, labels=bins, **theme.boxplot)
+    bp_upper = ax_upper.boxplot(data, tick_labels=bins, **theme.boxplot)
     ax_upper.set_ylim(split_threshold, 1.0)
     ax_upper.set_ylabel(ylabel, fontsize=10)
     ax_upper.tick_params(axis="x", labelsize=theme.x_tick_labelsize, labelbottom=False)
@@ -793,7 +793,7 @@ def plot_concordance_split_axis(
     ax_upper.tick_params(axis="x", bottom=False)
     
     # Lower plot: zoomed view (0 to split_threshold)
-    bp_lower = ax_lower.boxplot(data, labels=bins, **theme.boxplot)
+    bp_lower = ax_lower.boxplot(data, tick_labels=bins, **theme.boxplot)
     ax_lower.set_ylim(0, split_threshold)
     ax_lower.set_xlabel("IC Bin", fontsize=10)
     ax_lower.tick_params(axis="x", labelsize=theme.x_tick_labelsize)

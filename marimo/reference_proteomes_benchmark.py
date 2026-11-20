@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.25.2"
 app = marimo.App(width="medium")
 
 
@@ -72,10 +72,10 @@ def _(GODag, pd):
     # (https://www.kaggle.com/competitions/cafa-5-protein-function-prediction/data) IA.txt
     # ic_df = pd.read_csv("data/external/IA.txt", sep="\t", names=["go_term", "IC"])
 
-    ic_df = pd.read_csv("data/external/IC_swissprot.csv")
+    ic_df = pd.read_csv("../data/external/IC_swissprot.csv")
 
     # GO DAF
-    go_dag = GODag("data/external/go-basic-latest.obo")
+    go_dag = GODag("../data/external/go-basic-latest.obo")
     return go_dag, ic_df
 
 
@@ -109,7 +109,7 @@ def _(mo):
 
 @app.cell
 def _(Path):
-    BASE = Path("data/source/reference_proteomes/mdf_results")
+    BASE = Path("../data/source/reference_proteomes/mdf_results")
 
     identity_bins = {
         "50": "identity_bin_0.00-0.50",
@@ -259,19 +259,19 @@ def _(cov_100, cov_50, cov_90, plt):
     plt.tight_layout()
 
     plt.savefig(
-        "plots/SF3_reference_proteomes_hit_coverage.svg",
+        "../plots/SF3_reference_proteomes_hit_coverage.svg",
         format="svg",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        "plots/SF3_reference_proteomes_hit_coverage.pdf",
+        "../plots/SF3_reference_proteomes_hit_coverage.pdf",
         format="pdf",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        "plots/SF3_reference_proteomes_hit_coverage.png",
+        "../plots/SF3_reference_proteomes_hit_coverage.png",
         format="png",
         bbox_inches="tight",
         dpi=300,
@@ -281,7 +281,26 @@ def _(cov_100, cov_50, cov_90, plt):
 
 
 @app.cell
-def _():
+def _(cov_100):
+    cov_100
+    return
+
+
+@app.cell
+def _(go_terms_100):
+    go_terms_100
+    return
+
+
+@app.cell
+def _(go_terms_50):
+    go_terms_50["Protein"].nunique()
+    return
+
+
+@app.cell
+def _(go_terms_90):
+    go_terms_90.query("Neural_net=='gcn'")["Protein"].nunique()
     return
 
 
@@ -345,6 +364,18 @@ def _(mo):
     mo.md(r"""
     ## Refinement or noise
     """)
+    return
+
+
+@app.cell
+def _(go_terms_50):
+    go_terms_50["Protein"].unique()
+    return
+
+
+@app.cell
+def _(go_terms_50):
+    go_terms_50.query("Neural_net == 'gcn'")["Protein"].unique()
     return
 
 
@@ -841,7 +872,7 @@ def _(mo):
 def _(go_terms_100, go_terms_50, go_terms_90, ic_df, pd):
     # sequence only deepFRI
     dFseq = pd.read_csv(
-        "data/source/reference_proteomes/sequence_only_deepfri/merged_predictions.csv"
+        "../data/source/reference_proteomes/sequence_only_deepfri/merged_predictions.csv"
     )
     dFseq["Aspect"] = dFseq["Aspect"].str.lower()
     dFseq = pd.merge(
@@ -855,7 +886,7 @@ def _(go_terms_100, go_terms_50, go_terms_90, ic_df, pd):
 
     # true positive structure deepFRI
     dFstruct = pd.read_csv(
-        "data/source/reference_proteomes/true_structure_deepfri/merged_predictions.csv"
+        "../data/source/reference_proteomes/true_structure_deepfri/merged_predictions.csv"
     )
     dFstruct["Aspect"] = dFstruct["Aspect"].str.lower()
     dFstruct = pd.merge(
@@ -904,7 +935,7 @@ def _(dFstruct, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="GO_term/EC",
         score_col="Score",
-        obo_path="data/external/go-basic-latest.obo",
+        obo_path="../data/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -913,7 +944,7 @@ def _(dFstruct, ic_df, mdF100, prop):
         score_min=0.3,  # drop low-score annotations first
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering to only include dF predictable terms
-        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
     )
 
     dFstruct_propped = prop.propagate_go_annotations(
@@ -921,7 +952,7 @@ def _(dFstruct, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="GO_term/EC",
         score_col="Score",
-        obo_path="data/external/go-basic-latest.obo",
+        obo_path="../data/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -930,7 +961,7 @@ def _(dFstruct, ic_df, mdF100, prop):
         score_min=0.3,  # drop low-score annotations first
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering to only include dF predictable terms
-        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
     )
     return dFstruct_propped, mdF100_propped
 
@@ -967,7 +998,7 @@ def _(dFstruct_propped, gplot, mdF100_propped, plt):
         require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
         by_aspect=True,
         filter_predictable_terms=False,  # Filtering of predictable terms (REMOVES ALSO PROPAGATED TERMS)
-        predictable_terms_path="data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
     )
 
     _fig = gplot.plot_concordance_boxplot(
@@ -1071,19 +1102,19 @@ def _(dFseq, dFstruct, mdF100, mdF90, pd, plt):
     plt.tight_layout()
 
     plt.savefig(
-        "plots/SF4_reference_proteomes_prediction_coverage.svg",
+        "../plots/SF4_reference_proteomes_prediction_coverage.svg",
         format="svg",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        "plots/SF4_reference_proteomes_prediction_coverage.pdf",
+        "../plots/SF4_reference_proteomes_prediction_coverage.pdf",
         format="pdf",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        "plots/SF4_reference_proteomes_prediction_coverage.png",
+        "../plots/SF4_reference_proteomes_prediction_coverage.png",
         format="png",
         bbox_inches="tight",
         dpi=300,
@@ -1200,6 +1231,7 @@ def _(plt):
             _fig.savefig(f"{save_path}.png", bbox_inches="tight", dpi=300)
 
         plt.show()
+
     return (venn_with_percentages,)
 
 
@@ -1228,7 +1260,7 @@ def _(dFstruct, mdF100, mdF50, mdF90, pd, venn_with_percentages):
         membership_df["in_dfstruct"] = membership_df["pair"].isin(set_b)
         membership_df = membership_df.drop(columns="pair")
         membership_df.to_csv(
-            f"plots/raw_data/venn_diagram_mdf{suffix}_dfstruct.csv",
+            f"../plots/raw_data/venn_diagram_mdf{suffix}_dfstruct.csv",
             index=False,
         )
 
@@ -1238,7 +1270,7 @@ def _(dFstruct, mdF100, mdF50, mdF90, pd, venn_with_percentages):
             label_a=f"Metagenomic-deepFRI",
             label_b="       deepFRI-structure",
             offset=0.05,
-            save_path=f"plots/venn_diagram_mdf{suffix}_dfstruct",
+            save_path=f"../plots/venn_diagram_mdf{suffix}_dfstruct",
         )
     return (membership_df,)
 
@@ -1673,19 +1705,19 @@ def _(dFseq, dFstruct, mdF100, mdF90, np, plt):
     plt.tight_layout()
 
     plt.savefig(
-        f"plots/SF7_median_score_ref_prot.svg",
+        f"../plots/SF7_median_score_ref_prot.svg",
         format="svg",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        f"plots/SF7_median_score_ref_prot.pdf",
+        f"../plots/SF7_median_score_ref_prot.pdf",
         format="pdf",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        f"plots/SF7_median_score_ref_prot.png",
+        f"../plots/SF7_median_score_ref_prot.png",
         format="png",
         bbox_inches="tight",
         dpi=300,
