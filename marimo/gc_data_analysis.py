@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.25.2"
 app = marimo.App(width="medium")
 
 
@@ -48,7 +48,7 @@ def _(mo):
 @app.cell
 def _(pd):
     ### load the results prepared in gc_data_harmonization.py ###
-    full_results_df = pd.read_csv("data/generated/gc_benchmark_with_tm.csv")
+    full_results_df = pd.read_csv("team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/data/generated/gc_benchmark_with_tm.csv")
 
     # the idbin is really mmseqs2-identity based bin
     full_results_df = full_results_df.rename(columns={"idbin": "id_bin_mmseqs2"})
@@ -104,7 +104,7 @@ def _(full_results_df, np, pd):
 
 @app.cell
 def _(f1_long):
-    f1_long.to_csv("data/generated/gc_benchmark_f1_scores.csv", index=False)
+    f1_long.to_csv("team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/data/generated/gc_benchmark_f1_scores.csv", index=False)
     return
 
 
@@ -130,6 +130,7 @@ def _(np):
         low = np.percentile(boots, 100 * alpha / 2)
         high = np.percentile(boots, 100 * (1 - alpha / 2))
         return med, low, high
+
     return (bootstrap_ci,)
 
 
@@ -243,7 +244,7 @@ def _(Path, f1_long, np, pd, plt):
     _gc = 2
     _metric = "base"
     _out_prefix = "pyopal_vs_f1score"
-    _outdir = Path("plots")
+    _outdir = Path("team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/plots")
     _rawdir = _outdir / "raw_data"
     _rawdir.mkdir(parents=True, exist_ok=True)
 
@@ -410,16 +411,16 @@ def _(Path, f1_long, np, pd, plt):
 
     # Save
     plt.savefig(
-        _outdir / f"1C_{_out_prefix}.svg", format="svg", bbox_inches="tight"
+        _outdir / f"{_out_prefix}.svg", format="svg", bbox_inches="tight"
     )
     plt.savefig(
-        _outdir / f"1C_{_out_prefix}.pdf",
+        _outdir / f"{_out_prefix}.pdf",
         format="pdf",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        _outdir / f"1C_{_out_prefix}.png",
+        _outdir / f"{_out_prefix}.png",
         format="png",
         bbox_inches="tight",
         dpi=300,
@@ -729,7 +730,7 @@ def _(Path, f1_long, np, pd, plt):
     _gc = 0
     _metric = "base"
     _out_prefix = "pyopal_identity_vs_tmscore"
-    _outdir = Path("plots")
+    _outdir = Path("team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/plots")
     _rawdir = _outdir / "raw_data"
     _rawdir.mkdir(parents=True, exist_ok=True)
 
@@ -892,16 +893,16 @@ def _(Path, f1_long, np, pd, plt):
 
     # Save
     plt.savefig(
-        _outdir / f"1B_{_out_prefix}.svg", format="svg", bbox_inches="tight"
+        _outdir / f"{_out_prefix}.svg", format="svg", bbox_inches="tight"
     )
     plt.savefig(
-        _outdir / f"1B_{_out_prefix}.pdf",
+        _outdir / f"{_out_prefix}.pdf",
         format="pdf",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        _outdir / f"1B_{_out_prefix}.png",
+        _outdir / f"{_out_prefix}.png",
         format="png",
         bbox_inches="tight",
         dpi=300,
@@ -957,19 +958,21 @@ def _(bootstrap_ci, f1_long, plt):
     plt.tight_layout()
 
     # Save
+    _plot_dir = "team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/plots"
+
     plt.savefig(
-        f"plots/SF2_synthetic_contacts.svg",
+        f"{_plot_dir}/synthetic_contacts.svg",
         format="svg",
         bbox_inches="tight",
     )
     plt.savefig(
-        f"plots/SF2_synthetic_contacts.pdf",
+        f"{_plot_dir}/synthetic_contacts.pdf",
         format="pdf",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        f"plots/SF2_synthetic_contacts.png",
+        f"{_plot_dir}/synthetic_contacts.png",
         format="png",
         bbox_inches="tight",
         dpi=300,

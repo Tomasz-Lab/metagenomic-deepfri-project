@@ -39,9 +39,11 @@ def _():
     # save and display plots in whitemode
     matplotlib.style.use("default")
 
-    PLOT_DIR = Path("plots")
+    DATA_DIR = Path("team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/data")
+    PLOT_DIR = Path("team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/plots")
     RAW_DIR = PLOT_DIR / "raw_data"
     return (
+        DATA_DIR,
         LinearSegmentedColormap,
         LogNorm,
         PLOT_DIR,
@@ -71,17 +73,17 @@ def _(mo):
 
 
 @app.cell
-def _(np, pd, th):
+def _(DATA_DIR, np, pd, th):
     ### pair-level table: identities, TM-score and contact scores at gc = 2 ###
     _keys = ["query", "target", "idbin"]
     _identity = pd.read_csv(
-        "../data/generated/gc_benchmark_identity_definitions.csv"
+        f"{DATA_DIR}/generated/gc_benchmark_identity_definitions.csv"
     )
     _tm = pd.read_csv(
-        "../data/generated/gc_benchmark_with_tm.csv",
+        f"{DATA_DIR}/generated/gc_benchmark_with_tm.csv",
         usecols=_keys + ["tm_score", "evalue"],
     )
-    _counts = pd.read_csv("../data/generated/gc_benchmark_contact_counts.csv")
+    _counts = pd.read_csv(f"{DATA_DIR}/generated/gc_benchmark_contact_counts.csv")
     df = (
         _identity.merge(_tm, on=_keys)
         .merge(_counts.query("gc == 2"), on=_keys)
@@ -272,10 +274,10 @@ def _(mo):
 
 
 @app.cell
-def _(bin_labels, df, np, pd):
+def _(DATA_DIR, bin_labels, df, np, pd):
     ### best hit and any hit per identity bin (MMseqs2 reported identity) ###
     _search = pd.read_csv(
-        "../data/source/landscape/mmseqs2_search/afdb_uniprot_v4_results.tsv",
+        f"{DATA_DIR}/source/landscape/mmseqs2_search/afdb_uniprot_v4_results.tsv",
         sep="\t",
         usecols=["query", "target", "fident"],
     ).query("query != target")
@@ -346,7 +348,7 @@ def _(bin_labels, df, np, pd):
     )
 
     _lengths = {}
-    with open("../data/source/landscape/landscape_afdb_50k.fasta") as _f:
+    with open(f"{DATA_DIR}/source/landscape/landscape_afdb_50k.fasta") as _f:
         for _line in _f:
             if _line.startswith(">"):
                 _name = _line[1:].split()[0]
@@ -622,9 +624,9 @@ def _(mo):
 
 
 @app.cell
-def _(pd, th):
+def _(DATA_DIR, pd, th):
     ### structure features and CATH classes of queries ###
-    _features = pd.read_csv("../data/generated/landscape_structure_features.csv")
+    _features = pd.read_csv(f"{DATA_DIR}/generated/landscape_structure_features.csv")
     query_features = (
         _features.query("kind == 'query'").drop(columns="kind").set_index("id")
     )
@@ -641,8 +643,8 @@ def _(pd, th):
     )
 
     # TED domains of queries and templates; CATH names from cath-names.txt
-    _domains = pd.read_csv("../data/generated/landscape_ted_domains.csv")
-    _names = th.read_cath_names("../data/external/cath-names.txt")
+    _domains = pd.read_csv(f"{DATA_DIR}/generated/landscape_ted_domains.csv")
+    _names = th.read_cath_names(f"{DATA_DIR}/external/cath-names.txt")
     query_cath = th.protein_cath(_domains, _names)
     return query_cath, query_features, template_features
 

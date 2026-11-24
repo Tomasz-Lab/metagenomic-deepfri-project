@@ -31,7 +31,11 @@ To prepare the libraries:
 
 ### Data files
 
-"data/source" contains basic data used as input (e.g structures, contact maps, predicted GO terms) and is divided into three directories referencing benchmarks from the publication.
+"data/source" contains basic data used as input (e.g structures, contact maps, predicted GO terms) and is divided into five directories referencing benchmarks from the publication, including:
+
+-"data/source/runtime_benchmark" benchmarks mdF runtimes and hardware requirements against eggNOG-mapper. Only the summarised results ("results", described in its own README.md) and the query sets ("queries") are included; raw run outputs, conda environments and model weights are not. The analysis is in "marimo/runtime_analysis.py".
+
+-"data/source/swissprot_calibration" contains mdF predictions for a SwissProt temporal holdout, used to calculate F1 scores and Jaccard metrics for the score analysis in "marimo/mag__analysis.py".
 
 "data/generated" contains intermediate data, processed from source data.
 

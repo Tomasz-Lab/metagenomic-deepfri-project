@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.25.2"
 app = marimo.App(width="medium")
 
 
@@ -72,7 +72,7 @@ def _(mo):
 @app.cell
 def _(pd):
     ### data loading ###
-    _landscape_path = "data/source/landscape"
+    _landscape_path = "team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/data/source/landscape"
 
     # mmseqs2 results from mdeepfri (full afdb_v4 search)
     afdb_v4_full = pd.read_csv(
@@ -175,7 +175,7 @@ def _(afdb_v4_full, n_all_queries, np, plt):
 
     plt.tight_layout()
     plt.savefig(
-        "plots/landscape/self_hit_fident.png", dpi=300, bbox_inches="tight"
+        "team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/plots/self_hit_fident.png", dpi=300, bbox_inches="tight"
     )
     plt.show()
     return
@@ -304,7 +304,7 @@ def _():
 @app.cell
 def _(lru_cache, np, pd, re, subprocess):
     ### Calculate TM-scores ###
-    USALIGN_BIN = "/home/FilipS/software/USalign/USalign"  # please install https://github.com/pylelab/USalign
+    USALIGN_BIN = "software/USalign/USalign"  # please install https://github.com/pylelab/USalign
 
     _tm_regex = re.compile(r"TM-score\s*=\s*([0-9.]+)")
 
@@ -351,6 +351,7 @@ def _(lru_cache, np, pd, re, subprocess):
             return np.nan
 
         return run_usalign(true_path, pred_path)
+
     return (run_usalign,)
 
 

@@ -1,3 +1,8 @@
+# /// script
+# [tool.marimo.venv]
+# path = "../.venv"
+# ///
+
 import marimo
 
 __generated_with = "0.25.2"
@@ -21,10 +26,12 @@ def _():
     # save and display plots in whitemode
     matplotlib.style.use("default")
 
-    PLOT_DIR = "../plots"
-    RAW_DIR = "../plots/raw_data"
+    DATA_DIR = "team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/data"
+    PLOT_DIR = "team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/plots"
+    RAW_DIR = f"{PLOT_DIR}/raw_data"
     os.makedirs(RAW_DIR, exist_ok=True)
     return (
+        DATA_DIR,
         GODag,
         PLOT_DIR,
         Path,
@@ -83,9 +90,9 @@ def _(mo):
 
 
 @app.cell
-def _(pd):
+def _(DATA_DIR, pd):
     # load the metadata and choose high quality MAGs
-    df = pd.read_csv("../data/external/genomes-all_metadata.tsv", sep="\t")
+    df = pd.read_csv(f"{DATA_DIR}/external/genomes-all_metadata.tsv", sep="\t")
     df_mags = df.query(
         "Genome_type=='MAG' & Completeness > 95 & Contamination < 1 & N_contigs < 100 & Genome==Species_rep"
     )
@@ -125,7 +132,7 @@ def _(pd):
     urls_df = pd.DataFrame(url_rows)
 
     # write wget script to download those files
-    with open("../scripts/download_mgyg_50.sh", "w") as out:
+    with open("team/structural_and_functional_genomics/users/filip.schymik/projects/metagenomic_deepfri/scripts/download_mgyg_50.sh", "w") as out:
         out.write("#!/usr/bin/env bash\n\n")
         for sid in species_ids:
             sid_prefix = sid[:-2]
@@ -133,17 +140,17 @@ def _(pd):
             faa_url = f"{dir_url}{sid}.faa"
             eggnog_url = f"{dir_url}{sid}_eggNOG.tsv"
             out.write(
-                f"wget -c '{faa_url}' -O ../data/source/uhgp_mags/uhgp_50_mags/{sid}.faa\n"
+                f"wget -c '{faa_url}' -O {DATA_DIR}/source/uhgp_mags/uhgp_50_mags/{sid}.faa\n"
             )
             out.write(
-                f"wget -c '{eggnog_url}' -O ../data/source/uhgp_mags/uhgp_50_mags/{sid}_eggNOG.tsv\n"
+                f"wget -c '{eggnog_url}' -O {DATA_DIR}/source/uhgp_mags/uhgp_50_mags/{sid}_eggNOG.tsv\n"
             )
     return df, selected_genomes
 
 
 @app.cell
 def _(selected_genomes):
-    selected_genomes
+    selected_genomes 
     return
 
 
@@ -210,14 +217,14 @@ def _(mo):
 
 
 @app.cell
-def _(GODag, pd):
+def _(DATA_DIR, GODag, pd):
     # (https://www.kaggle.com/competitions/cafa-5-protein-function-prediction/data) IA.txt
     # ic_df = pd.read_csv("data/external/IA.txt", sep="\t", names=["go_term", "IC"])
 
     # information content from SwissProt
-    ic_df = pd.read_csv("../data/external/IC_swissprot.csv")
+    ic_df = pd.read_csv(f"{DATA_DIR}/external/IC_swissprot.csv")
 
-    obo = "../data/external/go-basic-latest.obo"
+    obo = f"{DATA_DIR}/external/go-basic-latest.obo"
 
     godag = GODag(
         obo,
@@ -295,9 +302,9 @@ def _(mo):
 
 
 @app.cell
-def _(ic_df, pd, resolve_aspect):
+def _(DATA_DIR, ic_df, pd, resolve_aspect):
     # sequence only deepFRI
-    dFseq = pd.read_csv("../data/source/uhgp_mags/uhgp_50_mags/deepfri_seq_preds.csv")
+    dFseq = pd.read_csv(f"{DATA_DIR}/source/uhgp_mags/uhgp_50_mags/deepfri_seq_preds.csv")
     dFseq = dFseq.rename(columns={"GO_term/EC": "go_term"})
 
     dFseq = pd.merge(
@@ -319,7 +326,7 @@ def _(ic_df, pd, resolve_aspect):
 
     # EGGnog go-terms from MGY
     eggnog = pd.read_csv(
-        "../data/source/uhgp_mags/uhgp_50_mags/eggnog_merged.tsv",
+        f"{DATA_DIR}/source/uhgp_mags/uhgp_50_mags/eggnog_merged.tsv",
         sep="\t",
     ).rename(columns={"#query": "Protein", "GOs": "go_term"})
 
@@ -350,7 +357,7 @@ def _(ic_df, pd, resolve_aspect):
     # load deepgo predictions
 
     deep_go = pd.read_csv(
-        "../data/source/uhgp_mags/uhgp_50_mags/deep_go_meta/uhgp_50_mags_preds_merged.tsv",
+        f"{DATA_DIR}/source/uhgp_mags/uhgp_50_mags/deep_go_meta/uhgp_50_mags_preds_merged.tsv",
         sep="\t",
     )
 
@@ -388,9 +395,9 @@ def _(deep_go):
 
 
 @app.cell
-def _():
+def _(DATA_DIR):
     # calculate how many sequences we have
-    _original_fasta = "../data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa"
+    _original_fasta = f"{DATA_DIR}/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa"
     with open(_original_fasta) as _f:
         all_sequences = sum(1 for line in _f if line.startswith(">"))
     return (all_sequences,)
@@ -405,8 +412,8 @@ def _(mo):
 
 
 @app.cell
-def _(Path, ic_df, pd):
-    _BASE = Path("../data/source/uhgp_mags/uhgp_50_mags/mdeepfri_results")
+def _(DATA_DIR, Path, ic_df, pd):
+    _BASE = Path(f"{DATA_DIR}/source/uhgp_mags/uhgp_50_mags/mdeepfri_results")
 
     identity_bins = {
         "100": "identity_bin_0.00-1.01",
@@ -577,17 +584,17 @@ def _(PLOT_DIR, RAW_DIR, all_sequences, cov_100, pd, plt):
     plt.tight_layout()
 
     plt.savefig(
-        f"{PLOT_DIR}/SF8_structure_db_composition.svg",
+        f"{PLOT_DIR}/structure_db_composition.svg",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        f"{PLOT_DIR}/SF8_structure_db_composition.svg",
+        f"{PLOT_DIR}/structure_db_composition.svg",
         bbox_inches="tight",
         dpi=300,
     )
     plt.savefig(
-        f"{PLOT_DIR}/SF8_structure_db_composition.png",
+        f"{PLOT_DIR}/structure_db_composition.png",
         bbox_inches="tight",
         dpi=300,
     )
@@ -679,12 +686,12 @@ def _(PLOT_DIR, RAW_DIR, np, pd, plt, pyopal_100):
     plt.legend()
     plt.tight_layout()
 
-    plt.savefig(f"{PLOT_DIR}/SF9_identity_coverage_curve.svg", bbox_inches="tight")
+    plt.savefig(f"{PLOT_DIR}/identity_coverage_curve.svg", bbox_inches="tight")
     plt.savefig(
-        f"{PLOT_DIR}/SF9_identity_coverage_curve.pdf", bbox_inches="tight", dpi=300
+        f"{PLOT_DIR}/identity_coverage_curve.pdf", bbox_inches="tight", dpi=300
     )
     plt.savefig(
-        f"{PLOT_DIR}/SF9_identity_coverage_curve.png", bbox_inches="tight", dpi=300
+        f"{PLOT_DIR}/identity_coverage_curve.png", bbox_inches="tight", dpi=300
     )
 
     pd.concat(
@@ -712,7 +719,15 @@ def _(selected_genomes):
 
 
 @app.cell
-def _(extract_rank, mdF100, pd, pyopal_100, selected_genomes, spearmanr):
+def _(
+    DATA_DIR,
+    extract_rank,
+    mdF100,
+    pd,
+    pyopal_100,
+    selected_genomes,
+    spearmanr,
+):
     NOVELTY_ORDER = [
         "named species",
         "named genus",
@@ -730,7 +745,7 @@ def _(extract_rank, mdF100, pd, pyopal_100, selected_genomes, spearmanr):
         return "named species"
 
 
-    with open("../data/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa") as _f:
+    with open(f"{DATA_DIR}/source/uhgp_mags/uhgp_50_mags/uhgp_50_mags.faa") as _f:
         _proteins = pd.Index(
             [line[1:].split()[0] for line in _f if line.startswith(">")]
         )
@@ -1015,8 +1030,8 @@ def _(
     _deep_go_hq = deep_go.query("Score >= 0.3")
 
     _groups = {
-        "EggNOG-go": proteins_with_go(eggnog_go) / all_sequences * 100,
-        "EggNOG-any": count_meaningful_eggnog_rows(eggnog) / all_sequences * 100,
+        "eggNOG-go": proteins_with_go(eggnog_go) / all_sequences * 100,
+        "eggNOG-any": count_meaningful_eggnog_rows(eggnog) / all_sequences * 100,
         "deepFRI-seq": proteins_with_go(_dFseq_hq) / all_sequences * 100,
         "mdeepFRI": proteins_with_go(_mdf100_hq) / all_sequences * 100,
         "DeepGOMeta": proteins_with_go(_deep_go_hq) / all_sequences * 100,
@@ -1065,12 +1080,12 @@ def _(
     _fig.tight_layout()
 
     # Save
-    _fig.savefig(f"{PLOT_DIR}/2C_prediction_coverage.svg", bbox_inches="tight")
+    _fig.savefig(f"{PLOT_DIR}/prediction_coverage.svg", bbox_inches="tight")
     _fig.savefig(
-        f"{PLOT_DIR}/2C_prediction_coverage.pdf", bbox_inches="tight", dpi=300
+        f"{PLOT_DIR}/prediction_coverage.pdf", bbox_inches="tight", dpi=300
     )
     _fig.savefig(
-        f"{PLOT_DIR}/2C_prediction_coverage.png", bbox_inches="tight", dpi=300
+        f"{PLOT_DIR}/prediction_coverage.png", bbox_inches="tight", dpi=300
     )
 
     _groups_df.to_csv(f"{RAW_DIR}/prediction_coverage.csv")
@@ -1342,14 +1357,14 @@ def _(
     )
 
     SOURCES = [
-        ("EggNOG-go", ic_eggnog),
+        ("eggNOG-go", ic_eggnog),
         ("deepFRI-seq", ic_dFseq_s20),
         ("mdeepFRI", ic_mdF100_s30),
         ("DeepGOMeta", ic_deepgo_s30),
     ]
 
     METHOD_COLORS = {
-        "EggNOG-go": "#ff9245",
+        "eggNOG-go": "#ff9245",
         "deepFRI-seq": "#33b1ff",
         "mdeepFRI": "#3ddbd9",
         "DeepGOMeta": "#6fdc8c",
@@ -1493,12 +1508,12 @@ def _(
 
     fig.subplots_adjust(left=0.08, right=0.99, bottom=0.20, top=1, wspace=0.05)
 
-    plt.savefig(f"{PLOT_DIR}/2A_max_ic_distribution.svg", format="svg")
+    plt.savefig(f"{PLOT_DIR}/max_ic_distribution.svg", format="svg")
     plt.savefig(
-        f"{PLOT_DIR}/2A_max_ic_distribution.pdf", bbox_inches="tight", dpi=300
+        f"{PLOT_DIR}/max_ic_distribution.pdf", bbox_inches="tight", dpi=300
     )
     plt.savefig(
-        f"{PLOT_DIR}/2A_max_ic_distribution.png", bbox_inches="tight", dpi=300
+        f"{PLOT_DIR}/max_ic_distribution.png", bbox_inches="tight", dpi=300
     )
     plt.show()
     return
@@ -1872,13 +1887,13 @@ def _(
             left=0.08, right=0.99, bottom=0.25, top=0.98, wspace=0.10
         )
         plt.savefig(
-            f"{PLOT_DIR}/2B_median_score_distribution.svg", format="svg", dpi=300
+            f"{PLOT_DIR}/median_score_distribution.svg", format="svg", dpi=300
         )
         plt.savefig(
-            f"{PLOT_DIR}/2B_median_score_distribution.pdf", format="pdf", dpi=300
+            f"{PLOT_DIR}/median_score_distribution.pdf", format="pdf", dpi=300
         )
         plt.savefig(
-            f"{PLOT_DIR}/2B_median_score_distribution.png", format="png", dpi=300
+            f"{PLOT_DIR}/median_score_distribution.png", format="png", dpi=300
         )
         plt.show()
 
@@ -1951,13 +1966,13 @@ def _(mo):
 
 
 @app.cell
-def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
+def _(DATA_DIR, dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
     mdf_propped = prop.propagate_go_annotations(
         mdF100,
         protein_col="Protein",
         term_col="go_term",
         score_col="Score",
-        obo_path="../data/external/go-basic-latest.obo",
+        obo_path=f"{DATA_DIR}/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -1966,7 +1981,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         score_min=0.3,  # drop low-score annotations first
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering to only include dF predictable terms
-        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path=f"{DATA_DIR}/external/deepfri_predictable_terms.csv",
     )
 
     dFseq_propped = prop.propagate_go_annotations(
@@ -1974,7 +1989,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="go_term",
         score_col="Score",
-        obo_path="../data/external/go-basic-latest.obo",
+        obo_path=f"{DATA_DIR}/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -1989,7 +2004,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="go_term",
         score_col=None,
-        obo_path="../data/external/go-basic-latest.obo",
+        obo_path=f"{DATA_DIR}/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -1997,7 +2012,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         obsolete_prefer="replaced_by",
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering
-        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path=f"{DATA_DIR}/external/deepfri_predictable_terms.csv",
     )
 
     deepgo_propped = prop.propagate_go_annotations(
@@ -2005,7 +2020,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         protein_col="Protein",
         term_col="go_term",
         score_col="Score",
-        obo_path="../data/external/go-basic-latest.obo",
+        obo_path=f"{DATA_DIR}/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a"),
         exclude_roots=True,
@@ -2014,7 +2029,7 @@ def _(dFseq, deep_go, eggnog_go, ic_df, mdF100, prop):
         score_min=0.3,
         round_decimals=3,  # round Score/IC/percent
         filter_predictable_terms=True,  # Enable filtering
-        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path=f"{DATA_DIR}/external/deepfri_predictable_terms.csv",
     )
     return dFseq_propped, deepgo_propped, eggnog_propped, mdf_propped
 
@@ -2071,7 +2086,7 @@ def _(mo):
 
 
 @app.cell
-def _(PLOT_DIR, eggnog_propped, gplot, mdf_propped, plt):
+def _(DATA_DIR, PLOT_DIR, eggnog_propped, gplot, mdf_propped, plt):
     per_prot, per_bin, stats = gplot.concordance_by_ic(
         mdf_propped[0],
         eggnog_propped[0],
@@ -2088,7 +2103,7 @@ def _(PLOT_DIR, eggnog_propped, gplot, mdf_propped, plt):
         require_both=True,  # force calculation only if both methods have > 0 go-terms for that IC
         by_aspect=True,
         filter_predictable_terms=False,  # Filtering of predictable terms (REMOVES ALSO PROPAGATED TERMS)
-        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path=f"{DATA_DIR}/external/deepfri_predictable_terms.csv",
     )
 
     _fig = gplot.plot_concordance_boxplot(
@@ -2117,13 +2132,23 @@ def _(mo):
 
 
 @app.cell
-def _(all_sequences, eggnog_propped, ic_df, mdF100, np, pd, plt, prop):
+def _(
+    DATA_DIR,
+    all_sequences,
+    eggnog_propped,
+    ic_df,
+    mdF100,
+    np,
+    pd,
+    plt,
+    prop,
+):
     _mdf, _ = prop.propagate_go_annotations(
         mdF100,
         protein_col="Protein",
         term_col="go_term",
         score_col="Score",
-        obo_path="../data/external/go-basic-latest.obo",
+        obo_path=f"{DATA_DIR}/external/go-basic-latest.obo",
         ic_df=ic_df,
         relations=("is_a",),
         exclude_roots=True,
@@ -2132,7 +2157,7 @@ def _(all_sequences, eggnog_propped, ic_df, mdF100, np, pd, plt, prop):
         score_min=0.1,
         round_decimals=3,
         filter_predictable_terms=True,
-        predictable_terms_path="../data/external/deepfri_predictable_terms.csv",
+        predictable_terms_path=f"{DATA_DIR}/external/deepfri_predictable_terms.csv",
     )
 
     # Terms with no IC are kept. concordance_by_ic would drop them.
@@ -2248,8 +2273,8 @@ def _():
 
 
 @app.cell
-def _(mo, pl):
-    _DIR = "../data/source/swissprot_calibration"
+def _(DATA_DIR, mo, pl):
+    _DIR = f"{DATA_DIR}/source/swissprot_calibration"
     _RUN = f"{_DIR}/mdf/identity_bin_0.00-0.50/generate_contacts_2"
 
     # Queries with a template ("aligned") are the ones predicted by the GCN.
@@ -2369,6 +2394,7 @@ def _(mo):
 
 @app.cell
 def _(
+    DATA_DIR,
     Path,
     RAW_DIR,
     cafa_eval,
@@ -2379,8 +2405,8 @@ def _(
     tempfile,
 ):
     # The evaluator reads a ground-truth file and a folder of prediction files.
-    _OBO = "../data/external/go-basic-latest.obo"
-    _DIR = Path("../data/generated/swissprot_calibration")
+    _OBO = f"{DATA_DIR}/external/go-basic-latest.obo"
+    _DIR = Path(f"{DATA_DIR}/generated/swissprot_calibration")
     (_DIR / "predictions").mkdir(parents=True, exist_ok=True)
     swissprot_truth.select("protein", "go_term").write_csv(
         _DIR / "ground_truth.tsv", separator="\t", include_header=False
@@ -2517,9 +2543,9 @@ def _(mo):
 
 
 @app.cell
-def _(RAW_DIR, pl, prop, swissprot_mdf, swissprot_truth):
+def _(DATA_DIR, RAW_DIR, pl, prop, swissprot_mdf, swissprot_truth):
     _propagator = prop.GOPropagator(
-        "../data/external/go-basic-latest.obo",
+        f"{DATA_DIR}/external/go-basic-latest.obo",
         relations=("is_a",),
         exclude_roots=True,
     )
@@ -2628,7 +2654,7 @@ def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     gplot.save_concordance_artifacts(
         _fig_faceted,
         per_prot,
-        out_prefix="2D_concordance_mdf_vs_eggnog_faceted_MF",
+        out_prefix="concordance_mdf_vs_eggnog_faceted_MF",
         out_dir=PLOT_DIR,
     )
 
@@ -2650,7 +2676,7 @@ def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     gplot.save_concordance_artifacts(
         _fig_faceted,
         per_prot,
-        out_prefix="SF10_concordance_mdf_vs_eggnog_faceted_BP",
+        out_prefix="concordance_mdf_vs_eggnog_faceted_BP",
         out_dir=PLOT_DIR,
     )
 
@@ -2672,7 +2698,7 @@ def _(PLOT_DIR, gplot, per_bin, per_prot, plt):
     gplot.save_concordance_artifacts(
         _fig_faceted,
         per_prot,
-        out_prefix="SF11_concordance_mdf_vs_eggnog_faceted_CC",
+        out_prefix="concordance_mdf_vs_eggnog_faceted_CC",
         out_dir=PLOT_DIR,
     )
 

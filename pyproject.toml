@@ -3,19 +3,28 @@ name = "metagenomic-deepfri"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
+authors = [
+    { name = "Filip Schymik", email = "fschymik@gmail.com" }
+]
 requires-python = ">=3.12"
 dependencies = [
-    "bio>=1.8.1",
-    "goatools>=1.5.2",
-    "ipython>=9.8.0",
-    "marimo>=0.18.4",
-    "matplotlib>=3.10.8",
+    "biopython>=1.88",
+    "numpy<2.4.0",
+    "cafaeval>=1.3.0",
+    "goatools>=1.6.9",
+    "marimo>=0.25.2",
+    "matplotlib>=3.11.2",
     "matplotlib-venn>=1.1.2",
-    "numpy>=2.3.5",
-    "openai>=2.13.0",
-    "pandas>=2.3.3",
-    "polars>=1.38.1",
-    "pyarrow>=23.0.1",
-    "ruff>=0.14.9",
+    "pandas<3",
+    "polars[pyarrow]>=2.1.0",
+    "pyarrow>=26.0.1",
+    "scipy>=1.18.1",
     "upsetplot>=0.9.0",
 ]
+
+[project.scripts]
+metagenomic-deepfri = "metagenomic_deepfri:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
